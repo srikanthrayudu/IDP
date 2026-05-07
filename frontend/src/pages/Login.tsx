@@ -19,6 +19,12 @@ const Login = () => {
                 navigate('/admin');
             } else if (response.data.role === 'ROLE_WARD_MEMBER') {
                 navigate('/ward-member');
+            } else if (response.data.role === 'ROLE_WORKER') {
+                navigate('/worker');
+            } else if (response.data.role === 'ROLE_DEPARTMENT') {
+                navigate('/department');
+            } else if (response.data.role === 'ROLE_CUSTOMER_CARE') {
+                navigate('/customer-care');
             } else {
                 navigate('/');
             }
@@ -56,6 +62,18 @@ const Login = () => {
                             </form>
                             <div className="mt-4 text-center">
                                 <Link to="/register" className="text-decoration-none text-primary fw-medium">Don't have an account? Register</Link>
+                            </div>
+                            <div className="mt-4 p-3 bg-light border rounded">
+                                <div className="fw-bold text-dark mb-2">Demo Login Credentials</div>
+                                <ul className="list-unstyled mb-0 small">
+                                    <li><span className="fw-medium">Admin:</span> admin / Admin@123</li>
+                                    <li><span className="fw-medium">Ward (generic):</span> ward / Ward@123</li>
+                                    <li><span className="fw-medium">Ward members 1-20:</span> ward1..ward20 / Ward@1231..Ward@12320</li>
+                                    <li><span className="fw-medium">Citizens 1-10:</span> citizen1..citizen10 / Citizen@1231..Citizen@12310</li>
+                                    <li><span className="fw-medium">Workers 1-10:</span> worker1..worker10 / Worker@1231..Worker@12310</li>
+                                    <li><span className="fw-medium">Department officers:</span> dept_roads / Department@123 (see other dept_* users)</li>
+                                    <li><span className="fw-medium">Customer care:</span> care / Care@123</li>
+                                </ul>
                             </div>
                         </div>
                     </div>

@@ -25,16 +25,26 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/smartcity_complaints
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://host.containers.internal:5433/smartcity_complaints
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=password
       - ML_SERVICE_URL=http://ml-service:5000/predict
       - DEMO_ADMIN_USERNAME=admin
-      - DEMO_ADMIN_PASSWORD=admin123
+      - DEMO_ADMIN_PASSWORD=Admin@123
       - DEMO_WARD_USERNAME=ward
-      - DEMO_WARD_PASSWORD=ward123
+      - DEMO_WARD_PASSWORD=Ward@123
+      - DEMO_WARD_COUNT=20
+      - DEMO_USER_USERNAME=citizen
+      - DEMO_USER_PASSWORD=Citizen@123
+      - DEMO_USER_COUNT=10
+      - DEMO_WORKER_USERNAME=worker
+      - DEMO_WORKER_PASSWORD=Worker@123
+      - DEMO_WORKER_COUNT=10
+      - SPRING_SQL_INIT_MODE=always
     volumes:
       - ./backend/uploads:/app/uploads
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
     depends_on:
       - db
       - ml-service
@@ -56,9 +66,14 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - MODEL_PATH=/app/model.pkl
+      - AUTO_TRAIN=1
+      - DATA_PATH=/app/data.csv
+      - OUT_DIR=/app/artifacts
+      - MODEL_PATH=/app/artifacts/model.pkl
+      - PRIORITY_MODEL_PATH=/app/artifacts/priority_model.pkl
     volumes:
-      - ./model.pkl:/app/model.pkl:ro
+      - ./ml-service/data.csv:/app/data.csv:ro
+      - ./ml-service/artifacts:/app/artifacts
 
 volumes:
   pgdata:

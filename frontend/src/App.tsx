@@ -5,12 +5,18 @@ import Register from './pages/Register';
 import UserDashboard from './pages/UserDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import WardMemberDashboard from './pages/WardMemberDashboard';
+import WorkerDashboard from './pages/WorkerDashboard';
+import DepartmentDashboard from './pages/DepartmentDashboard';
+import CustomerCareDashboard from './pages/CustomerCareDashboard';
 import './App.css'
 import './i18n'; // Import i18n for translations
 
 const roleToRoute = (role: string | null) => {
   if (role === 'ROLE_ADMIN') return '/admin';
   if (role === 'ROLE_WARD_MEMBER') return '/ward-member';
+  if (role === 'ROLE_WORKER') return '/worker';
+  if (role === 'ROLE_DEPARTMENT') return '/department';
+  if (role === 'ROLE_CUSTOMER_CARE') return '/customer-care';
   if (role === 'ROLE_USER') return '/';
   return null;
 };
@@ -58,6 +64,24 @@ function App() {
         <Route path="/ward-member" element={
           <PrivateRoute role="ROLE_WARD_MEMBER">
             <WardMemberDashboard />
+          </PrivateRoute>
+        } />
+
+        <Route path="/worker" element={
+          <PrivateRoute role="ROLE_WORKER">
+            <WorkerDashboard />
+          </PrivateRoute>
+        } />
+
+        <Route path="/department" element={
+          <PrivateRoute role="ROLE_DEPARTMENT">
+            <DepartmentDashboard />
+          </PrivateRoute>
+        } />
+
+        <Route path="/customer-care" element={
+          <PrivateRoute role="ROLE_CUSTOMER_CARE">
+            <CustomerCareDashboard />
           </PrivateRoute>
         } />
 

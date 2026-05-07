@@ -31,7 +31,9 @@ const resources = {
       "Describe the issue...": "Describe the issue...",
       "e.g. MG Road, Indiranagar": "e.g. MG Road, Indiranagar",
       "e.g. East": "e.g. East",
-      "e.g. 150": "e.g. 150"
+      "e.g. 150": "e.g. 150",
+      "Department": "Department",
+      "Select Department": "Select Department"
     }
   },
   kn: {
@@ -63,7 +65,9 @@ const resources = {
       "Describe the issue...": "ಸಮಸ್ಯೆಯನ್ನು ವಿವರಿಸಿ...",
       "e.g. MG Road, Indiranagar": "ಉದಾ. ಎಂಜಿ ರಸ್ತೆ, ಇಂದಿರಾನಗರ",
       "e.g. East": "ಉದಾ. ಪೂರ್ವ",
-      "e.g. 150": "ಉದಾ. 150"
+      "e.g. 150": "ಉದಾ. 150",
+      "Department": "ವಿಭಾಗ",
+      "Select Department": "ವಿಭಾಗವನ್ನು ಆಯ್ಕೆಮಾಡಿ"
     }
   }
 };

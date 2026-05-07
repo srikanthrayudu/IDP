@@ -3,12 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { LogOut, PlusCircle, ShieldAlert, History, MapPin, Upload, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import api from '../services/api';
+import ShapTokens from '../components/ShapTokens';
 
 interface Complaint {
     id: number;
     text: string;
     category: string;
+    department?: string;
+    priority?: string;
     status: string;
+    progressStatus?: string;
+    assignedWorkerName?: string;
     location: string;
     latitude?: number;
     longitude?: number;
@@ -17,6 +22,9 @@ interface Complaint {
     wardNumber: string;
     createdAt: string;
     isFraud?: boolean;
+    feedbackRating?: number;
+    feedbackComment?: string;
+    shapInterpretations?: string;
 }
 
 interface ComplaintHistory {
@@ -27,8 +35,25 @@ interface ComplaintHistory {
     changedAt: string;
 }
 
+const DEPARTMENTS = [
+    'Roads',
+    'Water Supply',
+    'Sanitation',
+    'Electricity',
+    'Drainage',
+    'Public Health',
+    'Traffic',
+    'Forest',
+    'Animal Welfare',
+    'Pollution Control',
+    'Town Planning',
+    'Parks & Horticulture'
+];
+
 const UserDashboard = () => {
     const { t, i18n } = useTranslation();
+    const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+    const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     const [complaints, setComplaints] = useState<Complaint[]>([]);
     const [text, setText] = useState('');
     const [location, setLocation] = useState('');
@@ -37,8 +62,12 @@ const UserDashboard = () => {
     const [imageUrl, setImageUrl] = useState('');
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [imageContentType, setImageContentType] = useState('');
+    const [imageSizeBytes, setImageSizeBytes] = useState<number | null>(null);
+    const [imageOriginalName, setImageOriginalName] = useState('');
     const [bbmpZone, setBbmpZone] = useState('');
     const [wardNumber, setWardNumber] = useState('');
+    const [department, setDepartment] = useState('');
     const [isLocating, setIsLocating] = useState(false);
     const [deviceId] = useState(() => {
         const storedDeviceId = localStorage.getItem('deviceId');
@@ -51,6 +80,8 @@ const UserDashboard = () => {
     const navigate = useNavigate();
     const [selectedHistory, setSelectedHistory] = useState<ComplaintHistory[]>([]);
     const [showHistory, setShowHistory] = useState(false);
+    const [feedbackRatings, setFeedbackRatings] = useState<Record<number, number>>({});
+    const [feedbackComments, setFeedbackComments] = useState<Record<number, string>>({});
 
     const fetchComplaints = async () => {
         try {
@@ -75,9 +106,13 @@ const UserDashboard = () => {
                 latitude: latitude === '' ? null : latitude, 
                 longitude: longitude === '' ? null : longitude, 
                 imageUrl, 
-                bbmpZone, 
-                wardNumber, 
-                deviceId 
+                imageContentType: imageContentType || null,
+                imageSizeBytes: imageSizeBytes || null,
+                imageOriginalName: imageOriginalName || null,
+                bbmpZone,
+                wardNumber,
+                department: department || null,
+                deviceId
             });
             alert('Complaint submitted successfully!');
             setText('');
@@ -86,8 +121,12 @@ const UserDashboard = () => {
             setLongitude('');
             setImageUrl('');
             setImageFile(null);
+            setImageContentType('');
+            setImageSizeBytes(null);
+            setImageOriginalName('');
             setBbmpZone('');
             setWardNumber('');
+            setDepartment('');
             fetchComplaints();
         } catch (error: unknown) {
             console.error('Submission failed', error);
@@ -112,6 +151,22 @@ const UserDashboard = () => {
             setShowHistory(true);
         } catch (error) {
             console.error('Failed to fetch history', error);
+        }
+    };
+
+    const submitFeedback = async (complaintId: number) => {
+        const rating = feedbackRatings[complaintId];
+        if (!rating) {
+            alert('Please select a rating.');
+            return;
+        }
+        const comment = feedbackComments[complaintId] || '';
+        try {
+            await api.post(`/complaints/${complaintId}/feedback?rating=${rating}&comment=${encodeURIComponent(comment)}`);
+            fetchComplaints();
+        } catch (error) {
+            console.error('Failed to submit feedback', error);
+            alert('Failed to submit feedback.');
         }
     };
 
@@ -158,6 +213,9 @@ const UserDashboard = () => {
             const url = response.data?.url;
             if (url) {
                 setImageUrl(url);
+                setImageContentType(response.data?.contentType || imageFile.type || '');
+                setImageSizeBytes(Number(response.data?.sizeBytes || imageFile.size || 0));
+                setImageOriginalName(response.data?.originalName || imageFile.name || '');
             }
         } catch (error) {
             console.error('Image upload failed', error);
@@ -221,13 +279,30 @@ const UserDashboard = () => {
                                             type="file"
                                             className="form-control"
                                             accept="image/*"
-                                            onChange={e => setImageFile(e.target.files?.[0] || null)}
+                                            onChange={e => {
+                                                const file = e.target.files?.[0] || null;
+                                                if (!file) {
+                                                    setImageFile(null);
+                                                    return;
+                                                }
+                                                if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+                                                    alert('Unsupported image type. Please upload JPG, PNG, or WebP.');
+                                                    e.currentTarget.value = '';
+                                                    return;
+                                                }
+                                                if (file.size > MAX_IMAGE_BYTES) {
+                                                    alert('Image too large. Max size is 5MB.');
+                                                    e.currentTarget.value = '';
+                                                    return;
+                                                }
+                                                setImageFile(file);
+                                            }}
                                         />
                                         <button type="button" className="btn btn-outline-secondary" onClick={uploadImageFile} disabled={isUploading}>
                                             {isUploading ? 'Uploading...' : 'Upload image'}
                                         </button>
                                     </div>
-                                    <div className="form-text">You can paste an image URL or upload a file.</div>
+                                    <div className="form-text">You can paste an image URL or upload a file (JPG/PNG/WebP, max 5MB).</div>
                                 </div>
                                 <div className="row mb-3 gx-2">
                                     <div className="col">
@@ -238,6 +313,19 @@ const UserDashboard = () => {
                                         <label className="form-label fw-medium text-secondary">{t('Ward No.')}</label>
                                         <input type="text" className="form-control bg-light" value={wardNumber} onChange={e => setWardNumber(e.target.value)} placeholder={t('e.g. 150')} />
                                     </div>
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label fw-medium text-secondary">{t('Department')}</label>
+                                    <select
+                                        className="form-select bg-light"
+                                        value={department}
+                                        onChange={e => setDepartment(e.target.value)}
+                                    >
+                                        <option value="">{t('Select Department')}</option>
+                                        {DEPARTMENTS.map(dep => (
+                                            <option key={dep} value={dep}>{dep}</option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div className="p-3 bg-light rounded text-muted mb-4" style={{ fontSize: '0.85em' }}>
                                     <div className="d-flex align-items-center mb-1">
@@ -277,24 +365,38 @@ const UserDashboard = () => {
                                             <th className="ps-4">{t('ID')}</th>
                                             <th>{t('Description')}</th>
                                             <th>{t('Category')}</th>
+                                            <th>{t('Department')}</th>
+                                            <th>Priority</th>
                                             <th>{t('Status')}</th>
+                                            <th>Assigned</th>
                                             <th>{t('Security')}</th>
                                             <th>{t('Date')}</th>
-                                            <th className="pe-4">{t('Actions')}</th>
+                                            <th>AI Explanation</th>
+                                            <th className="pe-4">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {complaints.length === 0 ? (
-                                            <tr><td colSpan={7} className="text-center py-4 text-muted">No complaints found.</td></tr>
+                                            <tr><td colSpan={10} className="text-center py-4 text-muted">No complaints found.</td></tr>
                                         ) : complaints.map(c => (
                                             <tr key={c.id}>
                                                 <td className="ps-4 fw-medium">#{c.id}</td>
                                                 <td className="text-truncate" style={{maxWidth: "200px"}} title={c.text}>{c.text}</td>
                                                 <td><span className="badge bg-light text-primary border border-primary-subtle">{c.category || 'Pending NLP'}</span></td>
+                                                <td><span className="badge bg-light text-dark border">{c.department || 'Unassigned'}</span></td>
+                                                <td>
+                                                    <span className={`badge ${c.priority === 'HIGH' ? 'bg-danger' : c.priority === 'MEDIUM' ? 'bg-warning text-dark' : 'bg-secondary'}`}>
+                                                        {c.priority || 'MEDIUM'}
+                                                    </span>
+                                                </td>
                                                 <td>
                                                     <span className={`badge ${c.status === 'PENDING' ? 'bg-warning text-dark' : 'bg-success'}`}>
                                                         {c.status}
                                                     </span>
+                                                    <div className="text-muted small mt-1">{c.progressStatus || 'NEW'}</div>
+                                                </td>
+                                                <td>
+                                                    <div className="text-secondary small">{c.assignedWorkerName || 'Unassigned'}</div>
                                                 </td>
                                                 <td>
                                                     {c.isFraud ? (
@@ -304,10 +406,39 @@ const UserDashboard = () => {
                                                     )}
                                                 </td>
                                                 <td className="text-secondary" style={{fontSize: "0.9rem"}}>{new Date(c.createdAt).toLocaleDateString()}</td>
+                                                <td>
+                                                    <div className="bg-light p-2 rounded" style={{ maxWidth: '240px' }}>
+                                                        <ShapTokens raw={c.shapInterpretations} maxTokens={6} emptyText="No XAI data" />
+                                                    </div>
+                                                </td>
                                                 <td className="pe-4">
                                                     <button className="btn btn-sm btn-light text-primary fw-medium border shadow-sm d-flex align-items-center" onClick={() => fetchHistory(c.id)}>
                                                         <History size={14} className="me-1" /> {t('View History')}
                                                     </button>
+                                                    {c.status === 'RESOLVED' && (
+                                                        <div className="mt-2">
+                                                            <div className="input-group input-group-sm mb-2">
+                                                                <select
+                                                                    className="form-select"
+                                                                    value={feedbackRatings[c.id] || c.feedbackRating || ''}
+                                                                    onChange={e => setFeedbackRatings(prev => ({ ...prev, [c.id]: Number(e.target.value) }))}
+                                                                >
+                                                                    <option value="">Rate</option>
+                                                                    {[1,2,3,4,5].map(score => (
+                                                                        <option key={score} value={score}>{score}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <input
+                                                                    type="text"
+                                                                    className="form-control"
+                                                                    placeholder="Feedback"
+                                                                    value={feedbackComments[c.id] || c.feedbackComment || ''}
+                                                                    onChange={e => setFeedbackComments(prev => ({ ...prev, [c.id]: e.target.value }))}
+                                                                />
+                                                            </div>
+                                                            <button className="btn btn-sm btn-outline-success" onClick={() => submitFeedback(c.id)}>Submit Feedback</button>
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}

@@ -6,11 +6,12 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import api from '../services/api';
+import ShapTokens from '../components/ShapTokens';
 
 // Fix leaflet default icon issue
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-let DefaultIcon = L.icon({
+const DefaultIcon = L.icon({
     iconUrl: icon,
     shadowUrl: iconShadow,
     iconSize: [25, 41],
@@ -26,9 +27,35 @@ interface ComplaintHistory {
     changedAt: string;
 }
 
+interface Worker {
+    id: number;
+    username: string;
+    wardNumber?: number;
+    categoryExpertise?: string;
+    assignedCount?: number;
+}
+
+interface Complaint {
+    id: number;
+    category?: string;
+    department?: string;
+    priority?: string;
+    progressStatus?: string;
+    assignedWorkerName?: string;
+    bbmpZone?: string;
+    text: string;
+    status: string;
+    deviceId?: string;
+    createdAt?: string;
+    isFraud?: boolean;
+    shapInterpretations?: string;
+    latitude?: number;
+    longitude?: number;
+}
+
 const WardMemberDashboard = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [complaints, setComplaints] = useState<any[]>([]);
+    const [complaints, setComplaints] = useState<Complaint[]>([]);
 
     // History Modal State
     const [selectedHistory, setSelectedHistory] = useState<ComplaintHistory[]>([]);
@@ -36,6 +63,14 @@ const WardMemberDashboard = () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [stats, setStats] = useState<any>({});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [monitoring, setMonitoring] = useState<any>({});
+
+    const [workers, setWorkers] = useState<Worker[]>([]);
+    const [workerUsername, setWorkerUsername] = useState('');
+    const [workerPassword, setWorkerPassword] = useState('');
+    const [workerExpertise, setWorkerExpertise] = useState('');
+    const [assignmentSelections, setAssignmentSelections] = useState<Record<number, number | ''>>({});
 
     const navigate = useNavigate();
 
@@ -46,20 +81,49 @@ const WardMemberDashboard = () => {
         [13.1740, 77.8310]
     ];
 
-    const fetchComplaints = async () => {
+    const fetchComplaints = async (isMounted?: () => boolean) => {
         try {
-            const listRes = await api.get('/complaints');
-            setComplaints(listRes.data);
-            const statsRes = await api.get('/complaints/dashboard/stats');
-            setStats(statsRes.data);
+            const [listRes, statsRes, monitoringRes] = await Promise.allSettled([
+                api.get('/complaints'),
+                api.get('/complaints/dashboard/stats'),
+                api.get('/complaints/dashboard/monitoring')
+            ]);
+
+            if (listRes.status === 'fulfilled' && (!isMounted || isMounted())) {
+                setComplaints(listRes.value.data);
+            }
+            if (statsRes.status === 'fulfilled' && (!isMounted || isMounted())) {
+                setStats(statsRes.value.data);
+            }
+            if (monitoringRes.status === 'fulfilled' && (!isMounted || isMounted())) {
+                setMonitoring(monitoringRes.value.data);
+            }
         } catch (error) {
             console.error('Failed to fetch data', error);
         }
     };
 
+    const fetchWorkers = async (isMounted?: () => boolean) => {
+        try {
+            const workersRes = await api.get('/workers');
+            if (!isMounted || isMounted()) {
+                setWorkers(workersRes.data);
+            }
+        } catch (error) {
+            console.error('Failed to fetch workers', error);
+        }
+    };
+
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        fetchComplaints();
+        let mounted = true;
+        const isMounted = () => mounted;
+
+        fetchComplaints(isMounted);
+        fetchWorkers(isMounted);
+
+        return () => {
+            mounted = false;
+        };
     }, []);
 
     const fetchHistory = async (complaintId: number) => {
@@ -81,15 +145,55 @@ const WardMemberDashboard = () => {
         }
     };
 
+    const handleAssignWorker = async (complaintId: number) => {
+        const workerId = assignmentSelections[complaintId];
+        if (!workerId) {
+            alert('Select a worker first.');
+            return;
+        }
+        try {
+            await api.put(`/complaints/${complaintId}/assign`, { workerId });
+            setAssignmentSelections(prev => ({ ...prev, [complaintId]: '' }));
+            fetchComplaints();
+        } catch (error) {
+            console.error('Failed to assign worker', error);
+            alert('Failed to assign worker.');
+        }
+    };
+
     const handleLogout = () => {
         localStorage.clear();
         navigate('/login');
+    };
+
+    const handleCreateWorker = async () => {
+        if (!workerUsername || !workerPassword) {
+            alert('Username and password are required.');
+            return;
+        }
+        try {
+            await api.post('/workers', {
+                username: workerUsername,
+                password: workerPassword,
+                categoryExpertise: workerExpertise
+            });
+            setWorkerUsername('');
+            setWorkerPassword('');
+            setWorkerExpertise('');
+            fetchWorkers();
+        } catch (error) {
+            console.error('Failed to create worker', error);
+            alert('Failed to create worker.');
+        }
     };
 
     const categoryData = Object.keys(stats.categoryCount || {}).map(key => ({
         name: key,
         value: stats.categoryCount[key]
     }));
+
+    const slaBreaches = monitoring.slaBreaches || {};
+    const feedbackByCategory = monitoring.feedbackByCategory || [];
 
     // Calculate a mock "Resolution Score" based on stats
     const resolutionRate = stats.totalComplaints > 0 ? (stats.resolvedComplaints / stats.totalComplaints) * 100 : 0;
@@ -150,6 +254,35 @@ const WardMemberDashboard = () => {
             </div>
 
             <div className="row mb-4 g-4">
+                <div className="col-md-4">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-header bg-white border-bottom fw-bold text-dark">SLA Breaches</div>
+                        <div className="card-body">
+                            <div className="d-flex justify-content-between"><span>High</span><span className="badge bg-danger">{slaBreaches.HIGH || 0}</span></div>
+                            <div className="d-flex justify-content-between mt-2"><span>Medium</span><span className="badge bg-warning text-dark">{slaBreaches.MEDIUM || 0}</span></div>
+                            <div className="d-flex justify-content-between mt-2"><span>Low</span><span className="badge bg-secondary">{slaBreaches.LOW || 0}</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div className="col-md-4">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-header bg-white border-bottom fw-bold text-dark">Avg Resolution (hrs)</div>
+                        <div className="card-body d-flex align-items-center justify-content-center">
+                            <h2 className="mb-0">{(monitoring.avgResolutionHours || 0).toFixed(1)}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div className="col-md-4">
+                    <div className="card border-0 shadow-sm h-100">
+                        <div className="card-header bg-white border-bottom fw-bold text-dark">Average Rating</div>
+                        <div className="card-body d-flex align-items-center justify-content-center">
+                            <h2 className="mb-0">{(monitoring.averageRating || 0).toFixed(1)}</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="row mb-4 g-4">
                 <div className="col-md-6">
                     <div className="card border-0 shadow-sm h-100">
                         <div className="card-header bg-white border-bottom py-3 d-flex align-items-center fw-bold text-dark">
@@ -187,8 +320,17 @@ const WardMemberDashboard = () => {
                                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                     attribution="&copy; OpenStreetMap contributors"
                                 />
-                                {complaints.filter(c => c.latitude && c.longitude).map(c => (
-                                    <Marker key={`map-${c.id}`} position={[c.latitude, c.longitude]}>
+                                {complaints
+                                    .map(c => {
+                                        const lat = Number(c.latitude);
+                                        const lng = Number(c.longitude);
+                                        return Number.isFinite(lat) && Number.isFinite(lng)
+                                            ? { ...c, latitude: lat, longitude: lng }
+                                            : null;
+                                    })
+                                    .filter(Boolean)
+                                    .map(c => (
+                                    <Marker key={`map-${c.id}`} position={[c.latitude as number, c.longitude as number]}>
                                         <Popup>
                                             <strong>#{c.id} - {c.category}</strong><br/>
                                             <span className={`badge ${c.status === 'RESOLVED' ? 'bg-success' : 'bg-warning text-dark'}`}>{c.status}</span>
@@ -197,6 +339,34 @@ const WardMemberDashboard = () => {
                                 ))}
                             </MapContainer>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="card border-0 shadow-sm mb-4">
+                <div className="card-header bg-white border-bottom fw-bold text-dark">Feedback by Category</div>
+                <div className="card-body p-0">
+                    <div className="table-responsive">
+                        <table className="table table-sm align-middle mb-0">
+                            <thead className="table-light">
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Avg Rating</th>
+                                    <th>Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {feedbackByCategory.length === 0 ? (
+                                    <tr><td colSpan={3} className="text-center text-muted py-3">No feedback yet.</td></tr>
+                                ) : feedbackByCategory.map((row: { category: string; avgRating: number; count: number }, index: number) => (
+                                    <tr key={`${row.category || 'unknown'}-${index}`}>
+                                        <td>{row.category || 'Unknown'}</td>
+                                        <td>{Number(row.avgRating || 0).toFixed(2)}</td>
+                                        <td>{row.count || 0}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -212,19 +382,25 @@ const WardMemberDashboard = () => {
                                 <tr>
                                     <th className="ps-4">ID</th>
                                     <th>Category</th>
+                                    <th>Department</th>
                                     <th>BBMP Zone</th>
                                     <th>Issue Details</th>
                                     <th>Status</th>
+                                    <th>Priority</th>
+                                    <th>Assigned</th>
+                                    <th>Progress</th>
+                                    <th>AI Explanation</th>
                                     <th className="pe-4">Actions (Update Status)</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {complaints.length === 0 ? (
-                                    <tr><td colSpan={6} className="text-center py-4 text-muted">No items assigned.</td></tr>
+                                    <tr><td colSpan={10} className="text-center py-4 text-muted">No items assigned.</td></tr>
                                 ) : complaints.map(c => (
                                     <tr key={c.id}>
                                         <td className="ps-4 fw-medium">#{c.id}</td>
                                         <td><div className="fw-bold text-dark">{c.category || 'N/A'}</div></td>
+                                        <td><span className="badge bg-light text-dark border">{c.department || 'Unassigned'}</span></td>
                                         <td><div className="text-secondary small">{c.bbmpZone || 'N/A'}</div></td>
                                         <td className="text-truncate" style={{maxWidth: "200px"}} title={c.text}>
                                             {c.text}
@@ -234,6 +410,37 @@ const WardMemberDashboard = () => {
                                             <span className={`badge ${c.status === 'RESOLVED' ? 'bg-success' : 'bg-warning text-dark'}`}>
                                                 {c.status}
                                             </span>
+                                        </td>
+                                        <td>
+                                            <span className={`badge ${c.priority === 'HIGH' ? 'bg-danger' : c.priority === 'MEDIUM' ? 'bg-warning text-dark' : 'bg-secondary'}`}>
+                                                {c.priority || 'MEDIUM'}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div className="text-secondary small">{c.assignedWorkerName || 'Unassigned'}</div>
+                                            <div className="d-flex gap-2 mt-2">
+                                                <select
+                                                    className="form-select form-select-sm"
+                                                    value={assignmentSelections[c.id] ?? ''}
+                                                    onChange={e => setAssignmentSelections(prev => ({ ...prev, [c.id]: e.target.value ? Number(e.target.value) : '' }))}
+                                                >
+                                                    <option value="">Assign worker</option>
+                                                    {workers.map(worker => (
+                                                        <option key={worker.id} value={worker.id}>{worker.username}</option>
+                                                    ))}
+                                                </select>
+                                                <button className="btn btn-sm btn-outline-primary" onClick={() => handleAssignWorker(c.id)}>
+                                                    Assign
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span className="badge bg-light text-dark border">{c.progressStatus || 'NEW'}</span>
+                                        </td>
+                                        <td>
+                                            <div className="bg-light p-2 rounded" style={{ maxWidth: '240px' }}>
+                                                <ShapTokens raw={c.shapInterpretations} maxTokens={6} emptyText="No XAI data" />
+                                            </div>
                                         </td>
                                         <td className="pe-4">
                                             <div className="d-flex flex-wrap gap-1">
@@ -251,6 +458,71 @@ const WardMemberDashboard = () => {
                                                 </button>
                                             </div>
                                         </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div className="card border-0 shadow-sm mt-4">
+                <div className="card-header bg-white border-bottom py-3 d-flex align-items-center fw-bold text-dark">
+                    <Settings size={20} className="me-2 text-primary" /> Worker Management
+                </div>
+                <div className="card-body">
+                    <div className="row g-3 mb-4">
+                        <div className="col-md-4">
+                            <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Worker username"
+                                value={workerUsername}
+                                onChange={e => setWorkerUsername(e.target.value)}
+                            />
+                        </div>
+                        <div className="col-md-4">
+                            <input
+                                type="password"
+                                className="form-control"
+                                placeholder="Temporary password"
+                                value={workerPassword}
+                                onChange={e => setWorkerPassword(e.target.value)}
+                            />
+                        </div>
+                        <div className="col-md-4">
+                            <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Category expertise"
+                                value={workerExpertise}
+                                onChange={e => setWorkerExpertise(e.target.value)}
+                            />
+                        </div>
+                        <div className="col-12">
+                            <button className="btn btn-primary" onClick={handleCreateWorker}>Add Worker</button>
+                        </div>
+                    </div>
+
+                    <div className="table-responsive">
+                        <table className="table table-hover align-middle mb-0">
+                            <thead className="table-light">
+                                <tr>
+                                    <th>Worker</th>
+                                    <th>Ward</th>
+                                    <th>Expertise</th>
+                                    <th>Assigned</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {workers.length === 0 ? (
+                                    <tr><td colSpan={4} className="text-center py-4 text-muted">No workers found.</td></tr>
+                                ) : workers.map(worker => (
+                                    <tr key={worker.id}>
+                                        <td className="fw-medium">{worker.username}</td>
+                                        <td>{worker.wardNumber || 'N/A'}</td>
+                                        <td>{worker.categoryExpertise || 'N/A'}</td>
+                                        <td><span className="badge bg-light text-dark border">{worker.assignedCount ?? 0}</span></td>
                                     </tr>
                                 ))}
                             </tbody>

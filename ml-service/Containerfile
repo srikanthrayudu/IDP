@@ -4,10 +4,15 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PIP_DEFAULT_TIMEOUT=120 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-COPY app.py .
+RUN pip install --retries 10 --progress-bar off -r requirements.txt
+
+COPY app.py train.py labels.py shap_utils.py shap_smoke.py start.sh data.csv .
+
+RUN chmod +x start.sh
 
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+CMD ["bash", "start.sh"]

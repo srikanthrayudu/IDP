@@ -1,6 +1,14 @@
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
 flask>=2.0.0
 flask-cors
 requests
 scikit-learn
 joblib
 shap
+pandas
+matplotlib
+sentence-transformers
+torch
+pytest

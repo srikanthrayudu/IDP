@@ -1,0 +1,25 @@
+# Repo-wide ignores
+logs/
+*.log
+
+# Java/Maven
+**/target/
+
+# Node
+**/node_modules/
+**/dist/
+**/dist-ssr/
+
+# Python
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+
+# IDEs/editors
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+
