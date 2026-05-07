@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  db:
+    image: docker.io/library/postgres:15
+    environment:
+      POSTGRES_DB: smartcity_complaints
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smartcity_complaints"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      containerfile: Containerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/smartcity_complaints
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+      - ML_SERVICE_URL=http://ml-service:5000/predict
+      - DEMO_ADMIN_USERNAME=admin
+      - DEMO_ADMIN_PASSWORD=admin123
+      - DEMO_WARD_USERNAME=ward
+      - DEMO_WARD_PASSWORD=ward123
+    volumes:
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      - db
+      - ml-service
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      containerfile: Containerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080/api
+
+  ml-service:
+    build:
+      context: ./ml-service
+      containerfile: Containerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - MODEL_PATH=/app/model.pkl
+    volumes:
+      - ./model.pkl:/app/model.pkl:ro
+
+volumes:
+  pgdata:
