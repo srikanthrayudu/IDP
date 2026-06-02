@@ -22,6 +22,9 @@ public class ComplaintHistory {
     private String oldStatus;
     private String newStatus;
 
+    private String oldProgressStatus;
+    private String newProgressStatus;
+
     private String remarks;
 
     @CreationTimestamp
@@ -30,9 +33,15 @@ public class ComplaintHistory {
     public ComplaintHistory() {}
 
     public ComplaintHistory(Complaint complaint, String oldStatus, String newStatus, String remarks) {
+        this(complaint, oldStatus, newStatus, null, null, remarks);
+    }
+
+    public ComplaintHistory(Complaint complaint, String oldStatus, String newStatus, String oldProgressStatus, String newProgressStatus, String remarks) {
         this.complaint = complaint;
         this.oldStatus = oldStatus;
         this.newStatus = newStatus;
+        this.oldProgressStatus = oldProgressStatus;
+        this.newProgressStatus = newProgressStatus;
         this.remarks = remarks;
     }
 
@@ -47,6 +56,12 @@ public class ComplaintHistory {
 
     public String getNewStatus() { return newStatus; }
     public void setNewStatus(String newStatus) { this.newStatus = newStatus; }
+
+    public String getOldProgressStatus() { return oldProgressStatus; }
+    public void setOldProgressStatus(String oldProgressStatus) { this.oldProgressStatus = oldProgressStatus; }
+
+    public String getNewProgressStatus() { return newProgressStatus; }
+    public void setNewProgressStatus(String newProgressStatus) { this.newProgressStatus = newProgressStatus; }
 
     public String getRemarks() { return remarks; }
     public void setRemarks(String remarks) { this.remarks = remarks; }

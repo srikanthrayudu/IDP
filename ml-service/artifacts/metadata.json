@@ -1,0 +1,70 @@
+{
+  "created_at": "2026-05-09T05:59:12Z",
+  "data_path": "/app/data.csv",
+  "out_dir": "/app/artifacts",
+  "model_path": "/app/artifacts/model.pkl",
+  "text_columns": [
+    "Sub Category",
+    "Ward Name",
+    "Grievance Status",
+    "Staff Remarks"
+  ],
+  "target_column": "Category",
+  "date_column": "Grievance Date",
+  "sample_rows": 0,
+  "test_size": 0.2,
+  "seed": 42,
+  "model_type": "logistic",
+  "class_weight": "balanced",
+  "calibrated": false,
+  "label_standardization": {
+    "canonical_labels": [
+      "Garbage and Solid Waste",
+      "Water Supply",
+      "Storm Water Drainage",
+      "Sewage and Sanitation",
+      "Roads and Potholes",
+      "Street Lights and Electrical",
+      "Parks and Environment",
+      "Public Health",
+      "Traffic and Public Safety",
+      "Property and Tax",
+      "Town Planning and Infrastructure",
+      "Other Public Services",
+      "Others"
+    ],
+    "unknown_label": "Unclassified",
+    "label_order": [
+      "Garbage and Solid Waste",
+      "Water Supply",
+      "Storm Water Drainage",
+      "Sewage and Sanitation",
+      "Roads and Potholes",
+      "Street Lights and Electrical",
+      "Parks and Environment",
+      "Public Health",
+      "Traffic and Public Safety",
+      "Property and Tax",
+      "Town Planning and Infrastructure",
+      "Other Public Services",
+      "Others"
+    ]
+  },
+  "tfidf": {
+    "ngram_max": 2,
+    "min_df": 2,
+    "max_features": null
+  },
+  "hyperparams": {
+    "C": 1.0,
+    "max_iter": 2000
+  },
+  "priority_model_path": "/app/artifacts/priority_model.pkl",
+  "bert": {
+    "enabled": false,
+    "model_name": "all-MiniLM-L6-v2",
+    "model_path": null,
+    "priority_model_path": null
+  },
+  "shap_background": "/app/artifacts/shap_background.json"
+}

@@ -16,7 +16,16 @@ public class User {
     private String password;
 
     @Column(nullable = false)
-    private String role; // "ROLE_USER", "ROLE_ADMIN", or "ROLE_WARD_MEMBER"
+    private String role; // "ROLE_USER", "ROLE_ADMIN", "ROLE_WARD_MEMBER", "ROLE_WORKER", "ROLE_DEPARTMENT", "ROLE_CUSTOMER_CARE"
+
+    @Column(name = "ward_number")
+    private Integer wardNumber;
+
+    @Column(name = "department")
+    private String department;
+
+    @Column(name = "category_expertise")
+    private String categoryExpertise;
 
     public User() {}
 
@@ -24,6 +33,13 @@ public class User {
         this.username = username;
         this.password = password;
         this.role = role;
+    }
+
+    public User(String username, String password, String role, Integer wardNumber) {
+        this.username = username;
+        this.password = password;
+        this.role = role;
+        this.wardNumber = wardNumber;
     }
 
     public Long getId() { return id; }
@@ -34,4 +50,12 @@ public class User {
     public void setPassword(String password) { this.password = password; }
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+    public Integer getWardNumber() { return wardNumber; }
+    public void setWardNumber(Integer wardNumber) { this.wardNumber = wardNumber; }
+
+    public String getDepartment() { return department; }
+    public void setDepartment(String department) { this.department = department; }
+
+    public String getCategoryExpertise() { return categoryExpertise; }
+    public void setCategoryExpertise(String categoryExpertise) { this.categoryExpertise = categoryExpertise; }
 }
