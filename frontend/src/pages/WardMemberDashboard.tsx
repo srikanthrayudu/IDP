@@ -321,22 +321,22 @@ const WardMemberDashboard = () => {
                                     attribution="&copy; OpenStreetMap contributors"
                                 />
                                 {complaints
-                                    .map(c => {
-                                        const lat = Number(c.latitude);
-                                        const lng = Number(c.longitude);
-                                        return Number.isFinite(lat) && Number.isFinite(lng)
-                                            ? { ...c, latitude: lat, longitude: lng }
-                                            : null;
-                                    })
-                                    .filter(Boolean)
+                                    .filter((c): c is Complaint & { latitude: number; longitude: number } => 
+                                        c !== null && 
+                                        c.latitude !== undefined && 
+                                        c.latitude !== null && 
+                                        c.longitude !== undefined && 
+                                        c.longitude !== null
+                                    )
                                     .map(c => (
-                                    <Marker key={`map-${c.id}`} position={[c.latitude as number, c.longitude as number]}>
-                                        <Popup>
-                                            <strong>#{c.id} - {c.category}</strong><br/>
-                                            <span className={`badge ${c.status === 'RESOLVED' ? 'bg-success' : 'bg-warning text-dark'}`}>{c.status}</span>
-                                        </Popup>
-                                    </Marker>
-                                ))}
+                                        <Marker key={`map-${c.id}`} position={[c.latitude, c.longitude]}>
+                                            <Popup>
+                                                <strong>#{c.id} - {c.category || 'N/A'}</strong><br/>
+                                                <span className={`badge ${c.status === 'RESOLVED' ? 'bg-success' : 'bg-warning text-dark'}`}>{c.status}</span>
+                                            </Popup>
+                                        </Marker>
+                                    ))
+                                }
                             </MapContainer>
                         </div>
                     </div>

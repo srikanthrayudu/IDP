@@ -29,7 +29,7 @@ public class DepartmentOfficerController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public List<DepartmentOfficerResponse> listDepartmentOfficers() {
         return userRepository.findByRole("ROLE_DEPARTMENT").stream()
                 .sorted(Comparator.comparing(User::getDepartment, Comparator.nullsLast(String::compareTo))
@@ -39,7 +39,7 @@ public class DepartmentOfficerController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public ResponseEntity<DepartmentOfficerResponse> createDepartmentOfficer(@Valid @RequestBody DepartmentOfficerCreateRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             return ResponseEntity.badRequest().build();
@@ -59,7 +59,7 @@ public class DepartmentOfficerController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public ResponseEntity<DepartmentOfficerResponse> updateDepartmentOfficer(@PathVariable Long id, @Valid @RequestBody DepartmentOfficerUpdateRequest request) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Department officer not found with id: " + id));

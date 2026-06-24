@@ -15,13 +15,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.ArrayList;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
@@ -32,6 +34,7 @@ import java.util.HashMap;
 @Service
 public class ComplaintService {
 
+    private static final Logger logger = LoggerFactory.getLogger(ComplaintService.class);
     private static final Set<String> VALID_STATUSES = Set.of("PENDING", "RESOLVED");
     private static final Set<String> VALID_PROGRESS_STATUSES = Set.of("NEW", "ASSIGNED", "IN_PROGRESS", "COMPLETED");
     private static final Set<String> VALID_PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH");
@@ -69,8 +72,15 @@ public class ComplaintService {
             throw new com.example.backend.exception.BadRequestException("Device " + complaint.getDeviceId() + " is blacklisted due to fraudulent activity (CEIR Security Measure).");
         }
 
+        // Validate complaint text
+        if (complaint.getText() == null || complaint.getText().isBlank()) {
+            throw new com.example.backend.exception.BadRequestException("Complaint text cannot be empty");
+        }
+
         if (userId != null) {
-            User user = userRepository.findById(userId).orElse(null);
+            User user = userRepository.findById(userId).orElseThrow(
+                    () -> new ResourceNotFoundException("User not found with id: " + userId)
+            );
             complaint.setUser(user);
         }
 
@@ -96,48 +106,55 @@ public class ComplaintService {
             complaint.setWardNumber(String.valueOf(requesterWard));
         }
 
-        // Call python ML service to classify text
+        // Call python ML service to classify text with improved error handling and logging
         try {
             RestTemplate restTemplate = new RestTemplate();
             MlPredictionRequest request = new MlPredictionRequest(complaint.getText());
             ResponseEntity<MlPredictionResponse> response = restTemplate.postForEntity(mlServiceUrl, request, MlPredictionResponse.class);
+
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 MlPredictionResponse body = response.getBody();
                 Double confidence = body.getConfidence();
                 String category = normalizeCategory(body.getCategory());
+
+                // Apply confidence threshold
                 if (confidence != null && confidence < categoryConfidenceMin) {
                     category = "UNCLASSIFIED";
                 }
 
                 String priority = normalizePriorityValue(body.getPriority());
                 Double priorityConfidence = body.getPriorityConfidence();
+
+                // Apply priority confidence threshold
                 if (priority == null || priorityConfidence == null || priorityConfidence < priorityConfidenceMin) {
                     priority = fallbackPriority(complaint.getText(), category);
                 }
+
+                // Enforce high priority for safety-critical issues
                 String forcedPriority = enforceHighPriority(complaint.getText(), category);
                 if (forcedPriority != null) {
                     priority = forcedPriority;
                 }
 
+                // Set ML-derived fields
                 complaint.setCategory(category == null || category.isBlank() ? "UNCLASSIFIED" : category);
                 complaint.setPriority(priority == null || priority.isBlank() ? "MEDIUM" : priority);
                 complaint.setShapInterpretations(safeJson(body.getShapValues() == null ? Map.of() : body.getShapValues()));
-                complaint.setMlConfidence(confidence);
-                complaint.setPriorityConfidence(priorityConfidence);
-                complaint.setRankedCategories(safeJson(body.getRankedCategories()));
-                complaint.setMlModelUsed(body.getModelUsed());
+                complaint.setMlConfidence(confidence != null ? confidence : 0.0);
+                complaint.setPriorityConfidence(priorityConfidence != null ? priorityConfidence : 0.0);
+                complaint.setRankedCategories(safeJson(body.getRankedCategories() == null ? List.of() : body.getRankedCategories()));
+                complaint.setMlModelUsed(body.getModelUsed() != null ? body.getModelUsed() : "unknown");
+
+                // Log successful ML prediction
+                if (isInfoLogEnabled()) {
+                    logInfo("ML prediction successful for complaint: category={}, priority={}, confidence={}",
+                            complaint.getCategory(), complaint.getPriority(), complaint.getMlConfidence());
+                }
+            } else {
+                handleMlServiceUnavailable(complaint, "ML service returned unsuccessful status: " + response.getStatusCode());
             }
-        } catch (Exception e) {
-            System.err.println("ML Service unreachable. Using heuristic fallback.");
-            String fallbackCategory = normalizeCategory(fallbackClassification(complaint.getText()));
-            String fallbackPriority = fallbackPriority(complaint.getText(), fallbackCategory);
-            String forcedPriority = enforceHighPriority(complaint.getText(), fallbackCategory);
-            complaint.setCategory(fallbackCategory);
-            complaint.setPriority(forcedPriority == null ? fallbackPriority : forcedPriority);
-            complaint.setMlConfidence(0.0);
-            complaint.setPriorityConfidence(0.0);
-            complaint.setRankedCategories("[]");
-            complaint.setMlModelUsed("fallback");
+        } catch (RestClientException e) {
+            handleMlServiceUnavailable(complaint, "ML service unreachable: " + e.getMessage());
         }
 
         String department = normalizeDepartment(complaint.getDepartment());
@@ -845,6 +862,27 @@ public class ComplaintService {
             return null;
         }
         return department.trim();
+    }
+
+    private boolean isInfoLogEnabled() {
+        return logger.isInfoEnabled();
+    }
+
+    private void logInfo(String format, Object... arguments) {
+        logger.info(format, arguments);
+    }
+
+    private void handleMlServiceUnavailable(Complaint complaint, String reason) {
+        logger.warn("ML Service unavailable: {}", reason);
+        String fallbackCategory = normalizeCategory(fallbackClassification(complaint.getText()));
+        String fallbackPriority = fallbackPriority(complaint.getText(), fallbackCategory);
+        String forcedPriority = enforceHighPriority(complaint.getText(), fallbackCategory);
+        complaint.setCategory(fallbackCategory);
+        complaint.setPriority(forcedPriority == null ? fallbackPriority : forcedPriority);
+        complaint.setMlConfidence(0.0);
+        complaint.setPriorityConfidence(0.0);
+        complaint.setRankedCategories("[]");
+        complaint.setMlModelUsed("fallback");
     }
 
     @Transactional

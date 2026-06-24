@@ -18,10 +18,10 @@ def load_shap_background(candidate_paths: typing.List[str], fallback_texts: typi
     return [str(item) for item in fallback_texts[:max_samples]]
 
 
-def build_text_explainer(model, background_texts: typing.List[str], output_names: typing.List[str]):
-    if not background_texts:
-        raise ValueError("SHAP background texts are required")
-    return shap.Explainer(model, background_texts, output_names=output_names)
+def build_text_explainer(model, background_texts: typing.List[str], output_names: typing.Optional[typing.List[str]] = None):
+    # For text explainers, we pass predict_proba and a text masker
+    masker = shap.maskers.Text(r"\W")
+    return shap.Explainer(model.predict_proba, masker, output_names=output_names)
 
 
 def summarize_shap_values(shap_values, class_index: int, max_words: int) -> typing.Tuple[dict, float]:

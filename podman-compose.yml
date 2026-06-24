@@ -25,7 +25,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://host.containers.internal:5433/smartcity_complaints
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/smartcity_complaints
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=password
       - ML_SERVICE_URL=http://ml-service:5000/predict
@@ -74,6 +74,10 @@ services:
     volumes:
       - ./ml-service/data.csv:/app/data.csv:ro
       - ./ml-service/artifacts:/app/artifacts
+      - ./ml-service/app.py:/app/app.py:ro
+      - ./ml-service/shap_utils.py:/app/shap_utils.py:ro
+      - ./ml-service/train.py:/app/train.py:ro
+      - ./ml-service/labels.py:/app/labels.py:ro
 
 volumes:
   pgdata:

@@ -21,7 +21,7 @@ public class WardController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public List<Ward> getAllWards() {
         return wardRepository.findAllByOrderByNumberAsc();
     }

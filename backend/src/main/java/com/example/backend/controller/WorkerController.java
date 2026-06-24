@@ -36,7 +36,7 @@ public class WorkerController {
     private PasswordEncoder passwordEncoder;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<List<WorkerResponse>> getWorkers(Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         User requester = userRepository.findById(userDetails.getId()).orElse(null);
@@ -48,7 +48,7 @@ public class WorkerController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<WorkerResponse> createWorker(@Valid @RequestBody WorkerCreateRequest request, Authentication authentication) {
         if (userRepository.existsByUsername(request.getUsername())) {
             return ResponseEntity.badRequest().build();
@@ -70,7 +70,7 @@ public class WorkerController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<WorkerResponse> updateWorker(@PathVariable Long id, @Valid @RequestBody WorkerUpdateRequest request, Authentication authentication) {
         User worker = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Worker not found with id: " + id));

@@ -58,14 +58,14 @@ public class ComplaintController {
     private String uploadDir;
 
     @GetMapping("/{id}/history")
-    @PreAuthorize("hasRole('USER') or hasRole('ADMIN') or hasRole('WARD_MEMBER') or hasRole('WORKER') or hasRole('DEPARTMENT') or hasRole('CUSTOMER_CARE')")
+    @PreAuthorize("hasRole('ROLE_USER') or hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER') or hasRole('ROLE_WORKER') or hasRole('ROLE_DEPARTMENT') or hasRole('ROLE_CUSTOMER_CARE')")
     public ResponseEntity<List<ComplaintHistory>> getComplaintHistory(@PathVariable Long id, Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.getComplaintHistory(id, userRepository.findById(userDetails.getId()).orElse(null)));
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('USER') or hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_USER') or hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<Complaint> submitComplaint(@RequestBody Complaint complaint, Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         Complaint saved = complaintService.submitComplaint(complaint, userDetails.getId());
@@ -73,41 +73,41 @@ public class ComplaintController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER') or hasRole('DEPARTMENT') or hasRole('CUSTOMER_CARE')") // Admins, Ward Members, Department officers, and Customer Care see scoped views
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER') or hasRole('ROLE_DEPARTMENT') or hasRole('ROLE_CUSTOMER_CARE')") // Admins, Ward Members, Department officers, and Customer Care see scoped views
     public ResponseEntity<List<Complaint>> getAllComplaints(Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.getComplaintsForRequester(userRepository.findById(userDetails.getId()).orElse(null)));
     }
 
     @GetMapping("/admin")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public ResponseEntity<List<Complaint>> getAllComplaintsForAdmin() {
         return ResponseEntity.ok(complaintService.getAllComplaints());
     }
 
     @GetMapping("/my")
-    @PreAuthorize("hasRole('USER') or hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_USER') or hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<List<Complaint>> getMyComplaints(Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.getUserComplaints(userDetails.getId()));
     }
 
     @GetMapping("/dashboard/stats")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER') or hasRole('DEPARTMENT') or hasRole('CUSTOMER_CARE')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER') or hasRole('ROLE_DEPARTMENT') or hasRole('ROLE_CUSTOMER_CARE')")
     public ResponseEntity<Map<String, Object>> getDashboardStats(Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.getDashboardStats(userRepository.findById(userDetails.getId()).orElse(null)));
     }
 
     @GetMapping("/dashboard/monitoring")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER') or hasRole('WORKER') or hasRole('DEPARTMENT') or hasRole('CUSTOMER_CARE')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER') or hasRole('ROLE_WORKER') or hasRole('ROLE_DEPARTMENT') or hasRole('ROLE_CUSTOMER_CARE')")
     public ResponseEntity<Map<String, Object>> getMonitoringStats(Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.getMonitoringStats(userRepository.findById(userDetails.getId()).orElse(null)));
     }
 
     @PutMapping("/{id}/status")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')") // Admins and Ward members can update status
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')") // Admins and Ward members can update status
     public ResponseEntity<Complaint> updateStatus(
             @PathVariable Long id,
             @NotBlank @Pattern(regexp = "(?i)PENDING|RESOLVED") @RequestParam String status,
@@ -117,35 +117,35 @@ public class ComplaintController {
     }
 
     @PutMapping("/{id}/assign")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<Complaint> assignWorker(@PathVariable Long id, @Valid @RequestBody ComplaintAssignRequest request, Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.assignWorker(id, request.getWorkerId(), request.getRemarks(), userRepository.findById(userDetails.getId()).orElse(null)));
     }
 
     @PutMapping("/{id}/priority")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<Complaint> updatePriority(@PathVariable Long id, @Valid @RequestBody ComplaintPriorityUpdateRequest request, Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.updatePriority(id, request.getPriority(), request.getRemarks(), userRepository.findById(userDetails.getId()).orElse(null)));
     }
 
     @PutMapping("/normalize-categories")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     public ResponseEntity<Map<String, Object>> normalizeCategories() {
         int updated = complaintService.normalizeStoredCategories();
         return ResponseEntity.ok(Map.of("updated", updated));
     }
 
     @PutMapping("/{id}/fraud")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<Complaint> markAsFraud(@PathVariable Long id, @NotNull @RequestParam Boolean isFraud, Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.markAsFraud(id, isFraud, userRepository.findById(userDetails.getId()).orElse(null)));
     }
 
     @PostMapping("/upload")
-    @PreAuthorize("hasRole('USER') or hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_USER') or hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<Map<String, Object>> uploadImage(@RequestParam("file") MultipartFile file) throws IOException {
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "File is empty"));
@@ -205,14 +205,14 @@ public class ComplaintController {
     }
 
     @GetMapping("/assigned")
-    @PreAuthorize("hasRole('WORKER')")
+    @PreAuthorize("hasRole('ROLE_WORKER')")
     public ResponseEntity<List<Complaint>> getAssignedComplaints(Authentication authentication) {
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
         return ResponseEntity.ok(complaintService.getWorkerComplaints(userDetails.getId()));
     }
 
     @PutMapping("/{id}/progress")
-    @PreAuthorize("hasRole('WORKER') or hasRole('ADMIN') or hasRole('WARD_MEMBER')")
+    @PreAuthorize("hasRole('ROLE_WORKER') or hasRole('ROLE_ADMIN') or hasRole('ROLE_WARD_MEMBER')")
     public ResponseEntity<Complaint> updateProgress(
             @PathVariable Long id,
             @NotBlank @Pattern(regexp = "(?i)NEW|ASSIGNED|IN_PROGRESS|COMPLETED") @RequestParam String progressStatus,
@@ -223,7 +223,7 @@ public class ComplaintController {
     }
 
     @PostMapping("/{id}/feedback")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('ROLE_USER')")
     public ResponseEntity<Complaint> submitFeedback(
             @PathVariable Long id,
             @NotNull @Min(1) @Max(5) @RequestParam Integer rating,

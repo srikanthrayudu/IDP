@@ -1,6 +1,18 @@
+import api from '../services/api';
+
 export interface ShapToken {
   token: string;
   value: number;
+}
+
+export async function fetchExplain(text: string): Promise<string> {
+  try {
+    const res = await api.post('/explain', { text });
+    return res.data?.explanation || '';
+  } catch (e) {
+    console.error('Failed to fetch explanation', e);
+    return '';
+  }
 }
 
 export function parseShapInterpretations(raw?: string, maxTokens = 6): ShapToken[] {

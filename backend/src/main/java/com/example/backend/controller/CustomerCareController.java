@@ -18,14 +18,14 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/ward-members")
+@RequestMapping("/api/customer-care")
 @CrossOrigin(origins = "*")
-public class WardMemberController {
+public class CustomerCareController {
     private final UserRepository userRepository;
     private final WardRepository wardRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public WardMemberController(UserRepository userRepository, WardRepository wardRepository, PasswordEncoder passwordEncoder) {
+    public CustomerCareController(UserRepository userRepository, WardRepository wardRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.wardRepository = wardRepository;
         this.passwordEncoder = passwordEncoder;
@@ -33,8 +33,8 @@ public class WardMemberController {
 
     @GetMapping
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public List<WardMemberResponse> listWardMembers() {
-        return userRepository.findByRole("ROLE_WARD_MEMBER").stream()
+    public List<WardMemberResponse> listCustomerCare() {
+        return userRepository.findByRole("ROLE_CUSTOMER_CARE").stream()
                 .sorted(Comparator.comparing(User::getWardNumber, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(User::getUsername))
                 .map(user -> new WardMemberResponse(user.getId(), user.getUsername(), user.getWardNumber()))
@@ -43,7 +43,7 @@ public class WardMemberController {
 
     @PostMapping
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public ResponseEntity<WardMemberResponse> createWardMember(@Valid @RequestBody WardMemberCreateRequest request) {
+    public ResponseEntity<WardMemberResponse> createCustomerCare(@Valid @RequestBody WardMemberCreateRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             return ResponseEntity.badRequest().build();
         }
@@ -54,7 +54,7 @@ public class WardMemberController {
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setRole("ROLE_WARD_MEMBER");
+        user.setRole("ROLE_CUSTOMER_CARE");
         user.setWardNumber(request.getWardNumber());
 
         User saved = userRepository.save(user);
@@ -64,10 +64,10 @@ public class WardMemberController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public ResponseEntity<WardMemberResponse> updateWardMember(@PathVariable Long id, @Valid @RequestBody WardMemberUpdateRequest request) {
+    public ResponseEntity<WardMemberResponse> updateCustomerCare(@PathVariable Long id, @Valid @RequestBody WardMemberUpdateRequest request) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Ward member not found with id: " + id));
-        if (!"ROLE_WARD_MEMBER".equals(user.getRole())) {
+                .orElseThrow(() -> new ResourceNotFoundException("Customer care not found with id: " + id));
+        if (!"ROLE_CUSTOMER_CARE".equals(user.getRole())) {
             return ResponseEntity.badRequest().build();
         }
         if (request.getWardNumber() != null) {

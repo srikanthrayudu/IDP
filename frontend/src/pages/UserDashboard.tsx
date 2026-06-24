@@ -2,8 +2,54 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, PlusCircle, ShieldAlert, History, MapPin, Upload, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import api from '../services/api';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import ShapTokens from '../components/ShapTokens';
+import api from '../services/api';
+
+// Fix leaflet default icon issue
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+const DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+function LocationMarker({ 
+    position, 
+    setPosition 
+}: { 
+    position: [number, number] | null; 
+    setPosition: (pos: [number, number]) => void;
+}) {
+    useMapEvents({
+        click(e) {
+            setPosition([e.latlng.lat, e.latlng.lng]);
+        },
+    });
+
+    return position === null ? null : (
+        <Marker position={position}>
+            <Popup>Selected Location</Popup>
+        </Marker>
+    );
+}
+
+function ChangeView({ center }: { center: [number, number] }) {
+    const map = useMap();
+    useEffect(() => {
+        if (center[0] && center[1]) {
+            map.setView(center, map.getZoom());
+        }
+    }, [center, map]);
+    return null;
+}
+
+
 
 interface Complaint {
     id: number;
@@ -59,6 +105,12 @@ const UserDashboard = () => {
     const [location, setLocation] = useState('');
     const [latitude, setLatitude] = useState<number | ''>('');
     const [longitude, setLongitude] = useState<number | ''>('');
+    const [markerPosition, setMarkerPosition] = useState<[number, number] | null>(null);
+    const mapCenter: [number, number] = [12.9716, 77.5946];
+    const bengaluruBounds: [[number, number], [number, number]] = [
+        [12.7343, 77.3790],
+        [13.1740, 77.8310]
+    ];
     const [imageUrl, setImageUrl] = useState('');
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -97,6 +149,27 @@ const UserDashboard = () => {
         fetchComplaints();
     }, []);
 
+    useEffect(() => {
+        if (markerPosition) {
+            const currentLat = Number(markerPosition[0].toFixed(6));
+            const currentLng = Number(markerPosition[1].toFixed(6));
+            if (latitude !== currentLat) setLatitude(currentLat);
+            if (longitude !== currentLng) setLongitude(currentLng);
+        }
+    }, [markerPosition]);
+
+    useEffect(() => {
+        if (latitude !== '' && longitude !== '') {
+            const latNum = Number(latitude);
+            const lngNum = Number(longitude);
+            if (!markerPosition || markerPosition[0] !== latNum || markerPosition[1] !== lngNum) {
+                setMarkerPosition([latNum, lngNum]);
+            }
+        } else {
+            if (markerPosition !== null) setMarkerPosition(null);
+        }
+    }, [latitude, longitude]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -130,11 +203,13 @@ const UserDashboard = () => {
             fetchComplaints();
         } catch (error: unknown) {
             console.error('Submission failed', error);
-            const e = error as { response?: { data?: { message?: string } } };
+            const e = error as { response?: { data?: { message?: string } }; message?: string };
             if (e.response && e.response.data && e.response.data.message) {
-                alert(`Error: ${e.response.data.message}`);
+                alert(`Submission failed: ${e.response.data.message}`);
+            } else if (e.message) {
+                alert(`Submission failed: ${e.message}`);
             } else {
-                alert('An error occurred. If your device is blacklisted, you cannot submit.');
+                alert('Submission failed. Please check your connection and try again.');
             }
         }
     };
@@ -264,12 +339,30 @@ const UserDashboard = () => {
                                 <div className="row mb-3 gx-2">
                                     <div className="col">
                                         <label className="form-label fw-medium text-secondary" style={{fontSize: "0.85rem"}}>{t('Latitude (opt)')}</label>
-                                        <input type="number" step="any" className="form-control bg-light" value={latitude} onChange={e => setLatitude(parseFloat(e.target.value) || '')} placeholder="12.9716" />
+                                        <input type="number" step="any" className="form-control bg-light shadow-sm" value={latitude} onChange={e => setLatitude(e.target.value ? parseFloat(e.target.value) : '')} placeholder="12.9716" />
                                     </div>
                                     <div className="col">
                                         <label className="form-label fw-medium text-secondary" style={{fontSize: "0.85rem"}}>{t('Longitude (opt)')}</label>
-                                        <input type="number" step="any" className="form-control bg-light" value={longitude} onChange={e => setLongitude(parseFloat(e.target.value) || '')} placeholder="77.5946" />
+                                        <input type="number" step="any" className="form-control bg-light shadow-sm" value={longitude} onChange={e => setLongitude(e.target.value ? parseFloat(e.target.value) : '')} placeholder="77.5946" />
                                     </div>
+                                </div>
+                                <div className="mb-3">
+                                    <label className="form-label fw-medium text-secondary d-flex align-items-center"><MapPin size={16} className="text-primary me-1"/> {t('Pin Location on Map')}</label>
+                                    <div style={{ height: '220px', width: '100%', borderRadius: '8px', overflow: 'hidden', border: '1px solid #dee2e6' }} className="shadow-sm">
+                                        <MapContainer
+                                            center={latitude !== '' && longitude !== '' ? [Number(latitude), Number(longitude)] : mapCenter}
+                                            zoom={12}
+                                            style={{ height: '100%', width: '100%' }}
+                                        >
+                                            <ChangeView center={latitude !== '' && longitude !== '' ? [Number(latitude), Number(longitude)] : mapCenter} />
+                                            <TileLayer
+                                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                                attribution="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors"
+                                            />
+                                            <LocationMarker position={markerPosition} setPosition={setMarkerPosition} />
+                                        </MapContainer>
+                                    </div>
+                                    <div className="form-text mt-1 text-muted">Click the map above to select coordinates, or use Geolocation.</div>
                                 </div>
                                 <div className="mb-3">
                                     <label className="form-label fw-medium text-secondary d-flex align-items-center"><Upload size={16} className="me-1"/> {t('Image URL (optional)')}</label>
@@ -350,6 +443,38 @@ const UserDashboard = () => {
                                 <li><strong className="text-dark">{t('Kill-Switch Protection')}:</strong> Fraudulent activity blacklists the device from our network.</li>
                                 <li><strong className="text-dark">{t('Report Scams')}:</strong> Disregard unknown SMS posing as officials. Dial toll-free numbers.</li>
                             </ul>
+                        </div>
+                    </div>
+
+                    <div className="card border-0 shadow-sm mb-4">
+                        <div className="card-header bg-white border-bottom py-3 d-flex align-items-center fw-bold text-dark">
+                            <MapPin size={20} className="me-2 text-primary" /> {t('My Complaint Locations Map')}
+                        </div>
+                        <div className="card-body p-0" style={{ height: '300px' }}>
+                            <MapContainer
+                                center={mapCenter}
+                                zoom={11}
+                                maxBounds={bengaluruBounds}
+                                maxBoundsViscosity={1.0}
+                                minZoom={10}
+                                style={{ height: '100%', width: '100%', zIndex: 0 }}
+                            >
+                                <TileLayer
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                    attribution="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors"
+                                />
+                                {complaints.filter(c => c.latitude && c.longitude).map(c => (
+                                    <Marker key={`map-${c.id}`} position={[c.latitude!, c.longitude!]}>
+                                        <Popup>
+                                            <strong>#{c.id} - {c.category}</strong>
+                                            <br />
+                                            <span>{c.text.substring(0, 55)}...</span>
+                                            <br />
+                                            <span className={`badge ${c.status === 'RESOLVED' ? 'bg-success' : 'bg-warning text-dark'} mt-1`}>{c.status}</span>
+                                        </Popup>
+                                    </Marker>
+                                ))}
+                            </MapContainer>
                         </div>
                     </div>
 

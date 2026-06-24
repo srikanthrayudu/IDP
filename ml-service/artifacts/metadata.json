@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-09T05:59:12Z",
+  "created_at": "2026-06-24T11:18:12Z",
   "data_path": "/app/data.csv",
   "out_dir": "/app/artifacts",
   "model_path": "/app/artifacts/model.pkl",
