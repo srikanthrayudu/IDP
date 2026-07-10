@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { LogOut, Activity, Clock, CheckCircle, PieChart as PieChartIcon, List, Settings, History, Map, Trophy } from 'lucide-react';
+import axios from 'axios';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -42,6 +43,7 @@ interface Complaint {
     priority?: string;
     progressStatus?: string;
     assignedWorkerName?: string;
+    wardNumber?: string;
     bbmpZone?: string;
     text: string;
     status: string;
@@ -157,7 +159,10 @@ const WardMemberDashboard = () => {
             fetchComplaints();
         } catch (error) {
             console.error('Failed to assign worker', error);
-            alert('Failed to assign worker.');
+            const message = axios.isAxiosError(error)
+                ? (error.response?.data?.message || error.response?.data?.error || error.message)
+                : 'Failed to assign worker.';
+            alert(message);
         }
     };
 
@@ -418,21 +423,30 @@ const WardMemberDashboard = () => {
                                         </td>
                                         <td>
                                             <div className="text-secondary small">{c.assignedWorkerName || 'Unassigned'}</div>
+                                            <div className="text-muted small">Ward: {c.wardNumber || 'N/A'}</div>
+                                            {(() => {
+                                                const complaintWard = c.wardNumber && !Number.isNaN(Number(c.wardNumber)) ? Number(c.wardNumber) : null;
+                                                const eligibleWorkers = complaintWard
+                                                    ? workers.filter(worker => worker.wardNumber === complaintWard)
+                                                    : workers;
+                                                return (
                                             <div className="d-flex gap-2 mt-2">
                                                 <select
                                                     className="form-select form-select-sm"
                                                     value={assignmentSelections[c.id] ?? ''}
                                                     onChange={e => setAssignmentSelections(prev => ({ ...prev, [c.id]: e.target.value ? Number(e.target.value) : '' }))}
                                                 >
-                                                    <option value="">Assign worker</option>
-                                                    {workers.map(worker => (
+                                                    <option value="">{complaintWard === null ? 'No ward set' : 'Assign worker'}</option>
+                                                    {eligibleWorkers.map(worker => (
                                                         <option key={worker.id} value={worker.id}>{worker.username}</option>
                                                     ))}
                                                 </select>
-                                                <button className="btn btn-sm btn-outline-primary" onClick={() => handleAssignWorker(c.id)}>
+                                                <button className="btn btn-sm btn-outline-primary" onClick={() => handleAssignWorker(c.id)} disabled={complaintWard === null || eligibleWorkers.length === 0}>
                                                     Assign
                                                 </button>
                                             </div>
+                                                );
+                                            })()}
                                         </td>
                                         <td>
                                             <span className="badge bg-light text-dark border">{c.progressStatus || 'NEW'}</span>

@@ -256,12 +256,12 @@ const UserDashboard = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/complaints', { 
-                text, 
-                location, 
-                latitude: latitude === '' ? null : latitude, 
-                longitude: longitude === '' ? null : longitude, 
-                imageUrl, 
+            const complaintPayload = {
+                text,
+                location,
+                latitude: latitude === '' ? null : latitude,
+                longitude: longitude === '' ? null : longitude,
+                imageUrl: imageUrl || null,
                 imageContentType: imageContentType || null,
                 imageSizeBytes: imageSizeBytes || null,
                 imageOriginalName: imageOriginalName || null,
@@ -269,7 +269,16 @@ const UserDashboard = () => {
                 wardNumber,
                 department: department || null,
                 deviceId
-            });
+            };
+
+            if (imageFile) {
+                const formData = new FormData();
+                formData.append('complaint', new Blob([JSON.stringify(complaintPayload)], { type: 'application/json' }));
+                formData.append('file', imageFile);
+                await api.post('/complaints', formData);
+            } else {
+                await api.post('/complaints', complaintPayload);
+            }
             alert('Complaint submitted successfully!');
             setText('');
             setLocation('');
@@ -407,15 +416,14 @@ const UserDashboard = () => {
         try {
             const formData = new FormData();
             formData.append('file', imageFile);
-            const response = await api.post('/complaints/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            const response = await api.post('/complaints/upload', formData);
             const url = response.data?.url;
             if (url) {
                 setImageUrl(url);
                 setImageContentType(response.data?.contentType || imageFile.type || '');
                 setImageSizeBytes(Number(response.data?.sizeBytes || imageFile.size || 0));
                 setImageOriginalName(response.data?.originalName || imageFile.name || '');
+                setImageFile(null);
             }
         } catch (error) {
             console.error('Image upload failed', error);
@@ -616,7 +624,17 @@ const UserDashboard = () => {
                                                 {isUploading ? 'Uploading...' : 'Upload'}
                                             </button>
                                         </div>
-                                        <div className="form-text">You can paste an image URL or upload a file. JPG, PNG, or WebP only.</div>
+                                        <div className="form-text">You can paste an image URL or pick a file. If a file is selected, it will be posted with the complaint.</div>
+                                        {imageFile && (
+                                            <div className="small text-secondary mt-2">
+                                                Selected file: <span className="fw-semibold text-dark">{imageFile.name}</span>
+                                            </div>
+                                        )}
+                                        {imageOriginalName && imageUrl && (
+                                            <div className="small text-success mt-2">
+                                                Attached image: <span className="fw-semibold">{imageOriginalName}</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="row mb-3 gx-2">

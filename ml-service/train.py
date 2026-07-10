@@ -18,11 +18,14 @@ from sklearn.metrics import (
     accuracy_score,
     classification_report,
     confusion_matrix,
-    f1_score
+    f1_score,
+    roc_auc_score,
+    roc_curve
 )
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
+from sklearn.preprocessing import label_binarize
 
 from labels import CANONICAL_LABELS, LABEL_UNKNOWN, standardize_label
 
@@ -179,6 +182,67 @@ def save_confusion_matrix(y_true, y_pred, labels, output_path: str):
     plt.close(fig)
 
 
+def save_roc_curve(roc_data, output_path: str):
+    micro = roc_data.get("micro") if isinstance(roc_data, dict) else None
+    if not micro or not micro.get("fpr") or not micro.get("tpr"):
+        return
+
+    fig, ax = plt.subplots(figsize=(7.5, 6))
+    ax.plot(micro["fpr"], micro["tpr"], color="#f472b6", linewidth=2.5, label=f"Micro-average ROC (AUC = {micro['auc']:.4f})")
+    ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1.5, label="Random baseline")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title("Multiclass ROC Curve")
+    ax.grid(True, linestyle=":", linewidth=0.7, alpha=0.6)
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+def build_roc_data(y_true, y_score, labels):
+    if y_true is None or y_score is None or len(labels) < 2:
+        return {}
+
+    y_true_bin = label_binarize(y_true, classes=labels)
+    if y_true_bin.shape[1] != len(labels):
+        return {}
+
+    roc_data = {}
+
+    try:
+        micro_fpr, micro_tpr, _ = roc_curve(y_true_bin.ravel(), y_score.ravel())
+        roc_data["micro"] = {
+            "fpr": micro_fpr.tolist(),
+            "tpr": micro_tpr.tolist(),
+            "auc": float(roc_auc_score(y_true_bin, y_score, average="micro"))
+        }
+    except ValueError:
+        return {}
+
+    try:
+        roc_data["macro_auc"] = float(roc_auc_score(y_true_bin, y_score, average="macro"))
+    except ValueError:
+        roc_data["macro_auc"] = None
+
+    per_class = {}
+    for index, label in enumerate(labels):
+        try:
+            fpr, tpr, _ = roc_curve(y_true_bin[:, index], y_score[:, index])
+            per_class[label] = {
+                "fpr": fpr.tolist(),
+                "tpr": tpr.tolist(),
+                "auc": float(roc_auc_score(y_true_bin[:, index], y_score[:, index]))
+            }
+        except ValueError:
+            continue
+
+    roc_data["per_class"] = per_class
+    return roc_data
+
+
 def train_model(
     data_path: str,
     out_dir: str,
@@ -306,13 +370,17 @@ def train_model(
 
     per_class_csv_path = os.path.join(out_dir, "per_class_report.csv")
     confusion_matrix_path = os.path.join(out_dir, "confusion_matrix.png")
+    roc_curve_path = os.path.join(out_dir, "roc_curve.png")
 
     if X_test is not None:
         preds = model.predict(X_test)
+        y_score = model.predict_proba(X_test)
         report = classification_report(y_test, preds, labels=label_order, output_dict=True, zero_division=0)
         report_df = pd.DataFrame(report).transpose()
         report_df.to_csv(per_class_csv_path, index=True)
         save_confusion_matrix(y_test, preds, label_order, confusion_matrix_path)
+        roc_data = build_roc_data(y_test, y_score, label_order)
+        save_roc_curve(roc_data, roc_curve_path)
         priority_test = priority_labels.loc[X_test.index]
         priority_preds = priority_model.predict(X_test)
         priority_report = classification_report(priority_test, priority_preds, output_dict=True, zero_division=0)
@@ -327,8 +395,11 @@ def train_model(
             "f1_macro": float(f1_score(y_test, preds, average="macro")),
             "f1_weighted": float(f1_score(y_test, preds, average="weighted")),
             "classification_report": report,
+            "roc_auc": roc_data.get("macro_auc"),
+            "roc_curve": roc_data,
             "per_class_csv": per_class_csv_path,
             "confusion_matrix_png": confusion_matrix_path,
+            "roc_curve_png": roc_curve_path,
             "priority_report": priority_report,
             "priority_per_class_csv": priority_per_class_csv,
             "priority_confusion_matrix_png": priority_confusion_path
@@ -491,4 +562,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

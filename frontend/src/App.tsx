@@ -8,6 +8,7 @@ import WardMemberDashboard from './pages/WardMemberDashboard';
 import WorkerDashboard from './pages/WorkerDashboard';
 import DepartmentDashboard from './pages/DepartmentDashboard';
 import CustomerCareDashboard from './pages/CustomerCareDashboard';
+import MLDashboard from './pages/MLDashboard';
 import './App.css'
 import './i18n'; // Import i18n for translations
 
@@ -82,6 +83,12 @@ function App() {
         <Route path="/customer-care" element={
           <PrivateRoute role="ROLE_CUSTOMER_CARE">
             <CustomerCareDashboard />
+          </PrivateRoute>
+        } />
+
+        <Route path="/ml-dashboard" element={
+          <PrivateRoute role="ROLE_ADMIN">
+            <MLDashboard />
           </PrivateRoute>
         } />
 

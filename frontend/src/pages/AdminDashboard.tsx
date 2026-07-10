@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
-import { LogOut, Activity, Clock, CheckCircle, PieChart as PieChartIcon, BarChart2, List, Settings, History, AlertTriangle, ShieldOff, Map } from 'lucide-react';
+import { LogOut, Activity, Clock, CheckCircle, PieChart as PieChartIcon, BarChart2, List, Settings, History, AlertTriangle, ShieldOff, Map, Brain, ExternalLink } from 'lucide-react';
+import axios from 'axios';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -26,6 +27,8 @@ interface Complaint {
     priority?: string;
     progressStatus?: string;
     assignedWorkerName?: string;
+    assignedWardMemberName?: string;
+    wardNumber?: string;
     bbmpZone: string;
     text: string;
     status: string;
@@ -75,6 +78,9 @@ const AdminDashboard = () => {
     const [complaints, setComplaints] = useState<any[]>([]);
     const [selectedFraudComplaint, setSelectedFraudComplaint] = useState<Complaint | null>(null);
     const [showFraudModal, setShowFraudModal] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [mlMetrics, setMlMetrics] = useState<any>({});
+    const [mlHealth, setMlHealth] = useState<{ status: string; model_loaded: boolean; bert_loaded: boolean } | null>(null);
 
     // History Modal State
     const [selectedHistory, setSelectedHistory] = useState<ComplaintHistory[]>([]);
@@ -150,6 +156,15 @@ const AdminDashboard = () => {
         fetchWorkers();
         // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchWardMembers();
+        // Fetch ML metrics
+        const ML_URL = import.meta.env.VITE_ML_URL || 'http://localhost:5000';
+        Promise.allSettled([
+            axios.get(`${ML_URL}/metrics`),
+            axios.get(`${ML_URL}/health`),
+        ]).then(([mRes, hRes]) => {
+            if (mRes.status === 'fulfilled') setMlMetrics(mRes.value.data.metrics || {});
+            if (hRes.status === 'fulfilled') setMlHealth(hRes.value.data);
+        });
     }, []);
 
     const handleUpdateStatus = async (id: number, status: string) => {
@@ -209,18 +224,21 @@ const AdminDashboard = () => {
         }
     };
 
-    const handleAssignWorker = async (complaintId: number) => {
-        const workerId = assignmentSelections[complaintId];
-        if (!workerId) {
-            alert('Select a worker first.');
+    const handleAssignWardMember = async (complaintId: number) => {
+        const wardMemberId = assignmentSelections[complaintId];
+        if (!wardMemberId) {
+            alert('Select a ward member first.');
             return;
         }
         try {
-            await api.put(`/complaints/${complaintId}/assign`, { workerId });
+            await api.put(`/complaints/${complaintId}/assign-ward-member`, { wardMemberId });
             fetchData();
         } catch (error) {
-            console.error('Failed to assign worker', error);
-            alert('Failed to assign worker.');
+            console.error('Failed to assign ward member', error);
+            const message = axios.isAxiosError(error)
+                ? (error.response?.data?.message || error.response?.data?.error || error.message)
+                : 'Failed to assign ward member.';
+            alert(message);
         }
     };
 
@@ -372,6 +390,49 @@ const AdminDashboard = () => {
                         <div className="card-body d-flex align-items-center justify-content-center">
                             <h2 className="mb-0">{(monitoring.averageRating || 0).toFixed(1)}</h2>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ML Model Health & Metrics Panel */}
+            <div className="card border-0 shadow-sm mb-4" style={{ borderLeft: '4px solid #4f46e5', borderRadius: 12, overflow: 'hidden' }}>
+                <div className="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center fw-bold text-dark">
+                        <Brain size={20} className="me-2" style={{ color: '#4f46e5' }} /> ML Model Validation & Health
+                    </div>
+                    <div className="d-flex align-items-center gap-3">
+                        <div className="d-flex align-items-center gap-2">
+                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: mlHealth?.status === 'healthy' ? '#10b981' : '#ef4444', boxShadow: mlHealth?.status === 'healthy' ? '0 0 6px #10b981' : '0 0 6px #ef4444' }} />
+                            <small className="text-muted">{mlHealth?.status === 'healthy' ? 'ML Service Online' : 'ML Service Offline'}</small>
+                        </div>
+                        <button className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1" onClick={() => navigate('/ml-dashboard')}>
+                            <ExternalLink size={14} /> Full Report
+                        </button>
+                    </div>
+                </div>
+                <div className="card-body">
+                    <div className="row g-3 text-center mb-3">
+                        {[
+                            { label: 'Category Accuracy', value: mlMetrics.accuracy != null ? `${(mlMetrics.accuracy * 100).toFixed(2)}%` : '—', color: '#4f46e5' },
+                            { label: 'Priority Accuracy', value: mlMetrics.priority_report?.accuracy != null ? `${(mlMetrics.priority_report.accuracy * 100).toFixed(2)}%` : '—', color: '#06b6d4' },
+                            { label: 'F1 Score (Macro)', value: mlMetrics.f1_macro != null ? `${(mlMetrics.f1_macro * 100).toFixed(2)}%` : '—', color: '#10b981' },
+                            { label: 'Train Rows', value: mlMetrics.train_rows?.toLocaleString() || '—', color: '#f59e0b' },
+                            { label: 'Test Rows', value: mlMetrics.test_rows?.toLocaleString() || '—', color: '#8b5cf6' },
+                            { label: 'Model Type', value: mlHealth?.bert_loaded ? 'MiniLM + LR' : (mlMetrics.model_type ? 'TF-IDF + LR' : '—'), color: '#64748b' },
+                        ].map((kpi) => (
+                            <div key={kpi.label} className="col-md-2 col-4">
+                                <div className="p-3 rounded" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                    <div style={{ fontSize: 22, fontWeight: 800, color: kpi.color }}>{kpi.value}</div>
+                                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{kpi.label}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="d-flex flex-wrap gap-2">
+                        <span className="badge" style={{ background: mlHealth?.model_loaded ? '#dcfce7' : '#fee2e2', color: mlHealth?.model_loaded ? '#166534' : '#991b1b', fontSize: 12, padding: '6px 12px' }}>TF-IDF Model: {mlHealth?.model_loaded ? '✓ Loaded & Active' : '✗ Not Loaded'}</span>
+                        <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: 12, padding: '6px 12px' }}>BERT: {mlHealth?.bert_loaded ? '✓ Loaded & Active' : 'Not Used — TF-IDF is Active'}</span>
+                        {mlMetrics.labels && <span className="badge" style={{ background: '#ede9fe', color: '#5b21b6', fontSize: 12, padding: '6px 12px' }}>{mlMetrics.labels.length} Categories</span>}
+                        {mlMetrics.tfidf && <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: 12, padding: '6px 12px' }}>N-gram: 1–{mlMetrics.tfidf.ngram_max}</span>}
                     </div>
                 </div>
             </div>
@@ -600,22 +661,35 @@ const AdminDashboard = () => {
                                             </span>
                                         </td>
                                         <td>
-                                            <div className="text-secondary small">{c.assignedWorkerName || 'Unassigned'}</div>
-                                            <div className="d-flex gap-2 mt-2">
-                                                <select
-                                                    className="form-select form-select-sm"
-                                                    value={assignmentSelections[c.id] ?? ''}
-                                                    onChange={e => setAssignmentSelections(prev => ({ ...prev, [c.id]: e.target.value ? Number(e.target.value) : '' }))}
-                                                >
-                                                    <option value="">Assign worker</option>
-                                                    {workers.map(worker => (
-                                                        <option key={worker.id} value={worker.id}>{worker.username}</option>
-                                                    ))}
-                                                </select>
-                                                <button className="btn btn-sm btn-outline-primary" onClick={() => handleAssignWorker(c.id)}>
-                                                    Assign
-                                                </button>
-                                            </div>
+                                            <div className="text-secondary small">{c.assignedWardMemberName || c.assignedWorkerName || 'Unassigned'}</div>
+                                            <div className="text-muted small">Ward: {c.wardNumber || 'N/A'}</div>
+                                            {(() => {
+                                                const complaintWard = c.wardNumber && !Number.isNaN(Number(c.wardNumber)) ? Number(c.wardNumber) : null;
+                                                const eligibleWardMembers = complaintWard
+                                                    ? wardMembers.filter(member => member.wardNumber === complaintWard)
+                                                    : wardMembers;
+                                                const canAssign = complaintWard !== null && eligibleWardMembers.length > 0;
+                                                return (
+                                                    <div className="d-flex gap-2 mt-2">
+                                                        <select
+                                                            className="form-select form-select-sm"
+                                                            value={assignmentSelections[c.id] ?? ''}
+                                                            onChange={e => setAssignmentSelections(prev => ({ ...prev, [c.id]: e.target.value ? Number(e.target.value) : '' }))}
+                                                            disabled={!canAssign}
+                                                        >
+                                                            <option value="">
+                                                                {complaintWard === null ? 'No ward set' : eligibleWardMembers.length === 0 ? 'No ward members' : 'Assign ward member'}
+                                                            </option>
+                                                            {eligibleWardMembers.map(member => (
+                                                                <option key={member.id} value={member.id}>{member.username}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button className="btn btn-sm btn-outline-primary" onClick={() => handleAssignWardMember(c.id)} disabled={!canAssign}>
+                                                            Assign
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })()}
                                         </td>
                                         <td>
                                             <span className="badge bg-light text-dark border">{c.progressStatus || 'NEW'}</span>

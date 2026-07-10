@@ -33,7 +33,7 @@ export function parseShapInterpretations(raw?: string, maxTokens = 6): ShapToken
           }
           return null;
         })
-        .filter((item): item is ShapToken => !!item && !Number.isNaN(item.value));
+        .filter((item): item is ShapToken => !!item && !Number.isNaN(item.value) && Math.abs(item.value) > 0.001);
       tokens.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
       return tokens.slice(0, maxTokens);
     }
@@ -41,7 +41,7 @@ export function parseShapInterpretations(raw?: string, maxTokens = 6): ShapToken
     if (parsed && typeof parsed === 'object') {
       const tokens = Object.entries(parsed)
         .map(([token, value]) => ({ token, value: Number(value) }))
-        .filter((item) => !Number.isNaN(item.value));
+        .filter((item) => !Number.isNaN(item.value) && Math.abs(item.value) > 0.001);
       tokens.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
       return tokens.slice(0, maxTokens);
     }

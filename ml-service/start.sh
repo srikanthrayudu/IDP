@@ -7,6 +7,8 @@ MODEL_PATH="${MODEL_PATH:-/app/artifacts/model.pkl}"
 PRIORITY_MODEL_PATH="${PRIORITY_MODEL_PATH:-/app/artifacts/priority_model.pkl}"
 AUTO_TRAIN="${AUTO_TRAIN:-1}"
 TRAIN_ARGS="${TRAIN_ARGS:-}"
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 
 if [[ "${AUTO_TRAIN}" == "1" || "${AUTO_TRAIN}" == "true" ]]; then
   if [[ -f "${DATA_PATH}" ]]; then
