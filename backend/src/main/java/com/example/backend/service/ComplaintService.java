@@ -25,20 +25,30 @@ import org.springframework.web.client.RestTemplate;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
 import java.util.Set;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Objects;
 
 @Service
 public class ComplaintService {
 
     private static final Logger logger = LoggerFactory.getLogger(ComplaintService.class);
     private static final Set<String> VALID_STATUSES = Set.of("PENDING", "RESOLVED");
-    private static final Set<String> VALID_PROGRESS_STATUSES = Set.of("NEW", "ASSIGNED", "IN_PROGRESS", "COMPLETED");
+    private static final Set<String> VALID_PROGRESS_STATUSES = Set.of("NEW", "ASSIGNED", "IN_PROGRESS", "COMPLETED", "BLOCKED");
     private static final Set<String> VALID_PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH");
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    private static final Map<String, String> ML_TO_CANONICAL = Map.ofEntries(
+            Map.entry("Street Lights and Electrical", "Streetlights"),
+            Map.entry("Garbage and Solid Waste", "Solid Waste (Garbage) Related"),
+            Map.entry("Roads and Potholes", "Road Maintenance(Engg)"),
+            Map.entry("Town Planning and Infrastructure", "Electrical")
+    );
 
     private static final int SLA_HIGH_HOURS = 24;
     private static final int SLA_MEDIUM_HOURS = 48;
@@ -65,6 +75,7 @@ public class ComplaintService {
     @Value("${ml.priority.confidence.min:0.55}")
     private double priorityConfidenceMin;
 
+    @Transactional
     public Complaint submitComplaint(Complaint complaint, Long userId) {
         // Implement Kill-Switch / CEIR mechanism from Sanchar Saathi
         // If a device is marked as fraud in any existing complaint, block it from submitting new ones
@@ -115,11 +126,14 @@ public class ComplaintService {
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 MlPredictionResponse body = response.getBody();
                 Double confidence = body.getConfidence();
-                String category = normalizeCategory(body.getCategory());
-
+                String mlCategoryRaw = body.getCategory();
+                String normalizedMlCategory = normalizeCategory(mlCategoryRaw);
+                String category;
                 // Apply confidence threshold
                 if (confidence != null && confidence < categoryConfidenceMin) {
                     category = "UNCLASSIFIED";
+                } else {
+                    category = mapMlCategoryToDisplay(normalizedMlCategory);
                 }
 
                 String priority = normalizePriorityValue(body.getPriority());
@@ -169,10 +183,20 @@ public class ComplaintService {
         if (complaint.getProgressStatus() == null || complaint.getProgressStatus().isBlank()) {
             complaint.setProgressStatus("NEW");
         }
+        complaint.setWorkflowRole("ROOT");
+        complaint.setParentComplaintId(null);
+        complaint.setDependsOnComplaintId(null);
 
         Complaint saved = repository.save(complaint);
-        autoAssignWorker(saved);
-        return repository.save(saved);
+        List<WorkflowTaskPlan> workflowPlans = buildWorkflowPlans(saved);
+        if (workflowPlans.isEmpty()) {
+            autoAssignWorker(saved);
+            return repository.save(saved);
+        }
+
+        List<Complaint> workflowTasks = createWorkflowTasks(saved, workflowPlans);
+        saved.setWorkflowTasks(workflowTasks);
+        return saved;
     }
 
     private void autoAssignWorker(Complaint complaint) {
@@ -181,6 +205,226 @@ public class ComplaintService {
             return;
         }
         applyAssignment(complaint, worker, "Auto-assigned to " + worker.getUsername());
+    }
+
+    private List<Complaint> createWorkflowTasks(Complaint rootComplaint, List<WorkflowTaskPlan> plans) {
+        Map<Integer, Complaint> createdByIndex = new HashMap<>();
+        List<Complaint> createdTasks = new ArrayList<>();
+        for (int index = 0; index < plans.size(); index++) {
+            WorkflowTaskPlan plan = plans.get(index);
+            Complaint task = new Complaint();
+            task.setUser(rootComplaint.getUser());
+            task.setText(rootComplaint.getText());
+            task.setCategory(plan.title());
+            task.setDepartment(plan.department());
+            task.setPriority(rootComplaint.getPriority());
+            task.setStatus("PENDING");
+            task.setProgressStatus(plan.dependsOnIndex() == null ? "NEW" : "BLOCKED");
+            task.setLocation(rootComplaint.getLocation());
+            task.setLatitude(rootComplaint.getLatitude());
+            task.setLongitude(rootComplaint.getLongitude());
+            task.setImageUrl(rootComplaint.getImageUrl());
+            task.setImageContentType(rootComplaint.getImageContentType());
+            task.setImageSizeBytes(rootComplaint.getImageSizeBytes());
+            task.setImageOriginalName(rootComplaint.getImageOriginalName());
+            task.setBbmpZone(rootComplaint.getBbmpZone());
+            task.setWardNumber(rootComplaint.getWardNumber());
+            task.setDeviceId(rootComplaint.getDeviceId());
+            task.setIsFraud(false);
+            task.setShapInterpretations(rootComplaint.getShapInterpretations());
+            task.setMlConfidence(rootComplaint.getMlConfidence());
+            task.setPriorityConfidence(rootComplaint.getPriorityConfidence());
+            task.setRankedCategories(rootComplaint.getRankedCategories());
+            task.setMlModelUsed(rootComplaint.getMlModelUsed());
+            task.setParentComplaintId(rootComplaint.getId());
+            task.setDependsOnComplaintId(null);
+            task.setWorkflowRole("TASK");
+
+            if (plan.dependsOnIndex() != null) {
+                Complaint dependency = createdByIndex.get(plan.dependsOnIndex());
+                if (dependency != null) {
+                    task.setDependsOnComplaintId(dependency.getId());
+                }
+            }
+
+            Complaint savedTask = repository.save(task);
+            autoAssignWorker(savedTask);
+            savedTask = repository.save(savedTask);
+            createdByIndex.put(index, savedTask);
+            createdTasks.add(savedTask);
+        }
+        return createdTasks;
+    }
+
+    private List<WorkflowTaskPlan> buildWorkflowPlans(Complaint complaint) {
+        String text = complaint.getText() == null ? "" : complaint.getText().toLowerCase();
+        LinkedHashMap<String, WorkflowTaskPlan> plansByDepartment = new LinkedHashMap<>();
+
+        if (containsAny(text, "tree", "fallen tree", "branch", "branches", "tree fallen", "tree fall")) {
+            plansByDepartment.putIfAbsent("Forest", new WorkflowTaskPlan("Forest", "Remove fallen tree", "Clear the tree, debris, or branch blocking the area.", null));
+        }
+        if (containsAny(text, "wire", "live wire", "current", "electrical", "electric", "transformer", "short circuit", "spark", "sparks")) {
+            plansByDepartment.putIfAbsent("Electricity", new WorkflowTaskPlan("Electricity", "Repair electrical line", "Fix the wire, restore power, and secure the electrical hazard.", null));
+        }
+        if (containsAny(text, "traffic", "congestion", "road blocked", "blocked road", "vehicle", "junction")) {
+            plansByDepartment.putIfAbsent("Traffic", new WorkflowTaskPlan("Traffic", "Restore traffic flow", "Clear the route and restore safe vehicle movement.", null));
+        }
+        if (containsAny(text, "road", "pothole", "footpath", "street", "lane")) {
+            plansByDepartment.putIfAbsent("Roads", new WorkflowTaskPlan("Roads", "Repair road obstruction", "Fix the road surface or remove the obstruction safely.", null));
+        }
+        if (containsAny(text, "drain", "sewage", "flood", "overflow")) {
+            plansByDepartment.putIfAbsent("Drainage", new WorkflowTaskPlan("Drainage", "Clear drainage blockage", "Remove the blockage and restore drainage flow.", null));
+        }
+        if (containsAny(text, "water", "pipe", "leak", "supply")) {
+            plansByDepartment.putIfAbsent("Water Supply", new WorkflowTaskPlan("Water Supply", "Restore water supply", "Stop the leakage and restore water service.", null));
+        }
+        if (containsAny(text, "garbage", "waste", "dumping", "bin")) {
+            plansByDepartment.putIfAbsent("Sanitation", new WorkflowTaskPlan("Sanitation", "Clear sanitation issue", "Remove waste and sanitize the affected area.", null));
+        }
+
+        if (plansByDepartment.isEmpty()) {
+            return List.of();
+        }
+
+        boolean forestBarrier = plansByDepartment.containsKey("Forest") && plansByDepartment.size() > 1;
+        List<WorkflowTaskPlan> plans = new ArrayList<>();
+        Integer forestIndex = null;
+
+        for (WorkflowTaskPlan plan : plansByDepartment.values()) {
+            if ("Forest".equals(plan.department())) {
+                forestIndex = plans.size();
+                plans.add(plan);
+            }
+        }
+
+        for (WorkflowTaskPlan plan : plansByDepartment.values()) {
+            if ("Forest".equals(plan.department())) {
+                continue;
+            }
+            if (forestBarrier && ("Electricity".equals(plan.department()) || "Traffic".equals(plan.department()))) {
+                plans.add(plan.withDependency(forestIndex));
+            } else {
+                plans.add(plan);
+            }
+        }
+
+        if (plans.size() > 1 && !forestBarrier) {
+            return plans.stream()
+                    .map(plan -> plan.withDependency(null))
+                    .collect(Collectors.toList());
+        }
+
+        return plans;
+    }
+
+    private boolean containsAny(String text, String... tokens) {
+        for (String token : tokens) {
+            if (text.contains(token)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void hydrateWorkflowTasks(Complaint complaint) {
+        if (complaint == null || complaint.getId() == null || !"ROOT".equalsIgnoreCase(complaint.getWorkflowRole())) {
+            return;
+        }
+        complaint.setWorkflowTasks(repository.findByParentComplaintIdOrderByCreatedAtAsc(complaint.getId()));
+    }
+
+    private Complaint getComplaintOrThrow(Long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Complaint not found with id: " + id));
+    }
+
+    private void syncWorkflowRootState(Long rootComplaintId, String remark) {
+        Complaint root = getComplaintOrThrow(rootComplaintId);
+        if (!"ROOT".equalsIgnoreCase(root.getWorkflowRole())) {
+            return;
+        }
+
+        List<Complaint> tasks = repository.findByParentComplaintIdOrderByCreatedAtAsc(rootComplaintId);
+        if (tasks.isEmpty()) {
+            return;
+        }
+
+        refreshTaskAvailability(tasks);
+
+        List<Complaint> safeTasks = tasks.stream().filter(Objects::nonNull).toList();
+        boolean allResolved = safeTasks.stream().allMatch(task -> "RESOLVED".equalsIgnoreCase(task.getStatus()));
+        boolean anyInProgress = safeTasks.stream().anyMatch(task -> "IN_PROGRESS".equalsIgnoreCase(task.getProgressStatus()));
+        boolean anyAssigned = safeTasks.stream().anyMatch(task -> "ASSIGNED".equalsIgnoreCase(task.getProgressStatus()));
+        boolean anyBlocked = safeTasks.stream().anyMatch(task -> "BLOCKED".equalsIgnoreCase(task.getProgressStatus()));
+
+        String oldStatus = root.getStatus();
+        String oldProgress = root.getProgressStatus();
+
+        if (allResolved) {
+            root.setStatus("RESOLVED");
+            root.setProgressStatus("COMPLETED");
+            root.setLastProgressAt(LocalDateTime.now());
+        } else if (anyInProgress) {
+            root.setStatus("PENDING");
+            root.setProgressStatus("IN_PROGRESS");
+        } else if (anyAssigned) {
+            root.setStatus("PENDING");
+            root.setProgressStatus("ASSIGNED");
+        } else if (anyBlocked) {
+            root.setStatus("PENDING");
+            root.setProgressStatus("BLOCKED");
+        } else {
+            root.setStatus("PENDING");
+            root.setProgressStatus("NEW");
+        }
+
+        repository.save(root);
+        hydrateWorkflowTasks(root);
+        historyRepository.save(new ComplaintHistory(root, oldStatus, root.getStatus(), oldProgress, root.getProgressStatus(), remark));
+    }
+
+    private void refreshTaskAvailability(List<Complaint> tasks) {
+        for (Complaint task : tasks) {
+            if (task == null) {
+                continue;
+            }
+            if ("RESOLVED".equalsIgnoreCase(task.getStatus())) {
+                continue;
+            }
+            String oldProgress = task.getProgressStatus();
+            String newProgress;
+            if (hasBlockingDependency(task)) {
+                newProgress = "BLOCKED";
+            } else if (task.getAssignedWorkerId() != null) {
+                newProgress = "ASSIGNED";
+            } else {
+                newProgress = "NEW";
+            }
+            if (!Objects.equals(oldProgress, newProgress)) {
+                task.setProgressStatus(newProgress);
+                repository.save(task);
+            }
+        }
+    }
+
+    private boolean hasBlockingDependency(Complaint complaint) {
+        if (complaint.getDependsOnComplaintId() == null) {
+            return false;
+        }
+        Complaint dependency = repository.findById(complaint.getDependsOnComplaintId()).orElse(null);
+        return dependency != null && !"RESOLVED".equalsIgnoreCase(dependency.getStatus());
+    }
+
+    private void ensureDependenciesSatisfied(Complaint complaint) {
+        if (hasBlockingDependency(complaint)) {
+            throw new BadRequestException("This task is blocked until the dependent department completes its action.");
+        }
+    }
+
+    private record WorkflowTaskPlan(String department, String title, String description, Integer dependsOnIndex) {
+        WorkflowTaskPlan withDependency(Integer dependencyIndex) {
+            return new WorkflowTaskPlan(department, title, description, dependencyIndex);
+        }
     }
 
     private User resolveWorkerForComplaint(Complaint complaint) {
@@ -207,6 +451,9 @@ public class ComplaintService {
         long bestLoad = Long.MAX_VALUE;
 
         for (User candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
             int score = 0;
             if (wardNumber != null && wardNumber.equals(candidate.getWardNumber())) {
                 score += 3;
@@ -230,7 +477,11 @@ public class ComplaintService {
     }
 
     private Map<Long, Long> getOpenLoadCounts(List<User> candidates) {
-        List<Long> workerIds = candidates.stream().map(User::getId).collect(Collectors.toList());
+        List<Long> workerIds = candidates.stream()
+                .filter(Objects::nonNull)
+                .map(User::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
         if (workerIds.isEmpty()) {
             return Map.of();
         }
@@ -315,6 +566,14 @@ public class ComplaintService {
         return "unclassified".equalsIgnoreCase(category.trim()) ? "UNCLASSIFIED" : category;
     }
 
+    private String mapMlCategoryToDisplay(String mlCategory) {
+        if (mlCategory == null) {
+            return null;
+        }
+        String key = mlCategory.trim();
+        return ML_TO_CANONICAL.getOrDefault(key, mlCategory);
+    }
+
     private String normalizeDepartment(String department) {
         if (department == null || department.isBlank()) {
             return null;
@@ -368,7 +627,9 @@ public class ComplaintService {
     }
 
     public List<Complaint> getUserComplaints(Long userId) {
-        return repository.findByUserId(userId);
+        List<Complaint> complaints = repository.findByUserIdAndParentComplaintIdIsNull(userId);
+        complaints.forEach(this::hydrateWorkflowTasks);
+        return complaints;
     }
 
     public List<Complaint> getComplaintsForRequester(User requester) {
@@ -376,14 +637,20 @@ public class ComplaintService {
             return List.of();
         }
         if ("ROLE_ADMIN".equals(requester.getRole()) || "ROLE_CUSTOMER_CARE".equals(requester.getRole())) {
-            return repository.findAll();
+            List<Complaint> complaints = repository.findAll();
+            complaints.stream()
+                    .filter(complaint -> "ROOT".equalsIgnoreCase(complaint.getWorkflowRole()))
+                    .forEach(this::hydrateWorkflowTasks);
+            return complaints;
         }
         if ("ROLE_WARD_MEMBER".equals(requester.getRole())) {
             String wardNumber = resolveWardNumber(requester.getWardNumber());
             if (wardNumber == null) {
                 return List.of();
             }
-            return repository.findByWardNumber(wardNumber);
+            List<Complaint> complaints = repository.findByWardNumberAndParentComplaintIdIsNull(wardNumber);
+            complaints.forEach(this::hydrateWorkflowTasks);
+            return complaints;
         }
         if ("ROLE_DEPARTMENT".equals(requester.getRole())) {
             String department = resolveDepartment(requester.getDepartment());
@@ -626,8 +893,15 @@ public class ComplaintService {
     }
 
     public Complaint updateStatus(Long id, String status) {
-        Complaint c = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Complaint not found with id: " + id));
+        Complaint c = getComplaintOrThrow(id);
         String normalizedStatus = normalizeStatus(status, VALID_STATUSES, "status");
+        if ("RESOLVED".equals(normalizedStatus) && "ROOT".equalsIgnoreCase(c.getWorkflowRole())) {
+            List<Complaint> tasks = repository.findByParentComplaintIdOrderByCreatedAtAsc(c.getId());
+            boolean allResolved = tasks.isEmpty() || tasks.stream().allMatch(task -> "RESOLVED".equalsIgnoreCase(task.getStatus()));
+            if (!allResolved) {
+                throw new BadRequestException("Cannot resolve the complaint before all department tasks are complete.");
+            }
+        }
         String oldStatus = c.getStatus();
         String oldProgress = c.getProgressStatus();
         c.setStatus(normalizedStatus);
@@ -639,6 +913,9 @@ public class ComplaintService {
 
         ComplaintHistory history = new ComplaintHistory(saved, oldStatus, saved.getStatus(), oldProgress, saved.getProgressStatus(), "Status updated to " + saved.getStatus());
         historyRepository.save(history);
+        if (saved.getParentComplaintId() != null) {
+            syncWorkflowRootState(saved.getParentComplaintId(), "Task status updated to " + saved.getStatus());
+        }
 
         return saved;
     }
@@ -650,13 +927,13 @@ public class ComplaintService {
     }
 
     public Complaint markAsFraud(Long id, Boolean isFraud) {
-        Complaint c = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Complaint not found with id: " + id));
+        Complaint c = getComplaintOrThrow(id);
         c.setIsFraud(isFraud);
         return repository.save(c);
     }
 
     public Complaint markAsFraud(Long id, Boolean isFraud, User requester) {
-        Complaint c = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Complaint not found with id: " + id));
+        Complaint c = getComplaintOrThrow(id);
         assertWardAccess(requester, c);
         c.setIsFraud(isFraud);
         return repository.save(c);
@@ -677,15 +954,18 @@ public class ComplaintService {
     }
 
     public List<Complaint> getWorkerComplaints(Long workerId) {
-        return repository.findByAssignedWorkerId(workerId);
+        List<Complaint> complaints = repository.findByAssignedWorkerId(workerId);
+        complaints.forEach(this::hydrateWorkflowTasks);
+        return complaints;
     }
 
     public Complaint updateProgress(Long id, String progressStatus, String remarks) {
-        Complaint c = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Complaint not found with id: " + id));
+        Complaint c = getComplaintOrThrow(id);
         String normalizedProgress = normalizeStatus(progressStatus, VALID_PROGRESS_STATUSES, "progressStatus");
         if (c.getAssignedWorkerId() == null) {
             throw new BadRequestException("Cannot update progress before assignment.");
         }
+        ensureDependenciesSatisfied(c);
         String oldStatus = c.getStatus();
         String oldProgress = c.getProgressStatus();
         c.setProgressStatus(normalizedProgress);
@@ -696,6 +976,9 @@ public class ComplaintService {
         }
         Complaint saved = repository.save(c);
         historyRepository.save(new ComplaintHistory(saved, oldStatus, saved.getStatus(), oldProgress, saved.getProgressStatus(), "Worker update: " + normalizedProgress + (remarks == null ? "" : " - " + remarks)));
+        if (saved.getParentComplaintId() != null) {
+            syncWorkflowRootState(saved.getParentComplaintId(), "Task progressed to " + saved.getProgressStatus());
+        }
         return saved;
     }
 
@@ -731,7 +1014,7 @@ public class ComplaintService {
         if (workerId == null) {
             throw new BadRequestException("workerId is required.");
         }
-        Complaint c = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Complaint not found with id: " + id));
+        Complaint c = getComplaintOrThrow(id);
         if ("RESOLVED".equalsIgnoreCase(c.getStatus())) {
             throw new BadRequestException("Cannot assign a resolved complaint.");
         }
@@ -742,6 +1025,9 @@ public class ComplaintService {
         }
         applyAssignment(c, worker, remarks == null || remarks.isBlank() ? "Assigned to " + worker.getUsername() : remarks);
         Complaint saved = repository.save(c);
+        if (saved.getParentComplaintId() != null) {
+            syncWorkflowRootState(saved.getParentComplaintId(), "Task assigned to " + saved.getAssignedWorkerName());
+        }
         return saved;
     }
 
@@ -763,7 +1049,7 @@ public class ComplaintService {
     }
 
     public Complaint updatePriority(Long id, String priority, String remarks) {
-        Complaint c = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Complaint not found with id: " + id));
+        Complaint c = getComplaintOrThrow(id);
         String normalizedPriority = normalizeStatus(priority, VALID_PRIORITIES, "priority");
         String oldPriority = c.getPriority();
         c.setPriority(normalizedPriority);
@@ -773,6 +1059,9 @@ public class ComplaintService {
             note = note + " - " + remarks;
         }
         historyRepository.save(new ComplaintHistory(saved, saved.getStatus(), saved.getStatus(), c.getProgressStatus(), c.getProgressStatus(), note));
+        if (saved.getParentComplaintId() != null) {
+            syncWorkflowRootState(saved.getParentComplaintId(), note);
+        }
         return saved;
     }
 
@@ -788,7 +1077,7 @@ public class ComplaintService {
         complaint.setAssignedAt(LocalDateTime.now());
         String oldProgress = complaint.getProgressStatus();
         if (!"COMPLETED".equalsIgnoreCase(oldProgress)) {
-            complaint.setProgressStatus("ASSIGNED");
+            complaint.setProgressStatus(hasBlockingDependency(complaint) ? "BLOCKED" : "ASSIGNED");
         }
         historyRepository.save(new ComplaintHistory(complaint, complaint.getStatus(), complaint.getStatus(), oldProgress, complaint.getProgressStatus(), remarks));
     }
@@ -883,6 +1172,49 @@ public class ComplaintService {
         complaint.setPriorityConfidence(0.0);
         complaint.setRankedCategories("[]");
         complaint.setMlModelUsed("fallback");
+    }
+
+    public int backfillMissingShapInterpretations() {
+        List<Complaint> complaints = repository.findComplaintsMissingShapInterpretations();
+        if (complaints.isEmpty()) {
+            return 0;
+        }
+
+        int updatedCount = 0;
+        RestTemplate restTemplate = new RestTemplate();
+
+        for (Complaint complaint : complaints) {
+            if (complaint.getText() == null || complaint.getText().isBlank()) {
+                continue;
+            }
+
+            try {
+                ResponseEntity<MlPredictionResponse> response = restTemplate.postForEntity(
+                        mlServiceUrl,
+                        new MlPredictionRequest(complaint.getText()),
+                        MlPredictionResponse.class
+                );
+
+                if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                    MlPredictionResponse body = response.getBody();
+                    if (body.getShapValues() != null && !body.getShapValues().isEmpty()) {
+                        complaint.setShapInterpretations(safeJson(body.getShapValues()));
+                        if (complaint.getRankedCategories() == null || complaint.getRankedCategories().isBlank()) {
+                            complaint.setRankedCategories(safeJson(body.getRankedCategories() == null ? List.of() : body.getRankedCategories()));
+                        }
+                        if (complaint.getMlModelUsed() == null || complaint.getMlModelUsed().isBlank()) {
+                            complaint.setMlModelUsed(body.getModelUsed() != null ? body.getModelUsed() : "unknown");
+                        }
+                        repository.save(complaint);
+                        updatedCount += 1;
+                    }
+                }
+            } catch (RestClientException ex) {
+                logger.warn("Skipping SHAP backfill for complaint {}: {}", complaint.getId(), ex.getMessage());
+            }
+        }
+
+        return updatedCount;
     }
 
     @Transactional
