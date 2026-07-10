@@ -33,6 +33,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.io.InputStream;
 
 @Service
 public class ComplaintService {
@@ -43,12 +44,30 @@ public class ComplaintService {
     private static final Set<String> VALID_PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH");
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private static final Map<String, String> ML_TO_CANONICAL = Map.ofEntries(
+    private static final Map<String, String> DEFAULT_ML_TO_CANONICAL = Map.ofEntries(
             Map.entry("Street Lights and Electrical", "Streetlights"),
             Map.entry("Garbage and Solid Waste", "Solid Waste (Garbage) Related"),
             Map.entry("Roads and Potholes", "Road Maintenance(Engg)"),
             Map.entry("Town Planning and Infrastructure", "Electrical")
     );
+
+    private static final Map<String, String> ML_TO_CANONICAL;
+    static {
+        Map<String, String> map = new java.util.HashMap<>(DEFAULT_ML_TO_CANONICAL);
+        try (InputStream is = ComplaintService.class.getClassLoader().getResourceAsStream("ml-category-mapping.json")) {
+            if (is != null) {
+                Map<?, ?> loaded = OBJECT_MAPPER.readValue(is, Map.class);
+                for (Map.Entry<?, ?> e : loaded.entrySet()) {
+                    if (e.getKey() != null && e.getValue() != null) {
+                        map.put(e.getKey().toString(), e.getValue().toString());
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            logger.warn("Could not load ml-category-mapping.json, using defaults: {}", ex.getMessage());
+        }
+        ML_TO_CANONICAL = java.util.Collections.unmodifiableMap(map);
+    }
 
     private static final int SLA_HIGH_HOURS = 24;
     private static final int SLA_MEDIUM_HOURS = 48;
