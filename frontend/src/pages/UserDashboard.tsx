@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, PlusCircle, ShieldAlert, History, MapPin, Upload, Globe, Sparkles, CheckCircle2, ChevronRight } from 'lucide-react';
+import { LogOut, PlusCircle, ShieldAlert, History, MapPin, Upload, Globe, Sparkles, Headphones, CheckCircle2, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
