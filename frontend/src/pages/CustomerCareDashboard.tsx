@@ -30,6 +30,43 @@ const CustomerCareDashboard = () => {
   const [monitoring, setMonitoring] = useState<any>({});
   const navigate = useNavigate();
 
+  // Filing complaint on behalf of a citizen
+  const [showFileModal, setShowFileModal] = useState(false);
+  const [formText, setFormText] = useState('');
+  const [formCategory, setFormCategory] = useState('');
+  const [formWard, setFormWard] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const openFileModal = () => {
+    setFormText('');
+    setFormCategory('');
+    setFormWard('');
+    setShowFileModal(true);
+  };
+  const closeFileModal = () => setShowFileModal(false);
+
+  const submitOnBehalf = async () => {
+    if (!formText || formText.trim().length < 5) {
+      alert('Please enter a descriptive complaint text (min 5 chars).');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload: any = { text: formText.trim() };
+      if (formCategory) payload.category = formCategory.trim();
+      if (formWard) payload.wardNumber = formWard.trim();
+      await api.post('/complaints', payload);
+      setShowFileModal(false);
+      fetchData();
+      alert('Complaint filed on behalf of citizen.');
+    } catch (err) {
+      console.error('Failed to submit complaint', err);
+      alert('Failed to file complaint.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const fetchData = async () => {
     try {
       const [listRes, statsRes, monitoringRes] = await Promise.all([
@@ -61,9 +98,14 @@ const CustomerCareDashboard = () => {
         <h2 className="mb-0 text-primary fw-bold d-flex align-items-center">
           <Headphones size={28} className="me-2" /> Customer Care Dashboard
         </h2>
-        <button className="btn btn-outline-danger d-flex align-items-center" onClick={handleLogout}>
-          <LogOut size={18} className="me-2" /> Logout
-        </button>
+        <div className="d-flex gap-2">
+          <button className="btn btn-primary d-flex align-items-center" onClick={openFileModal}>
+            <Headphones size={16} className="me-2" /> File Complaint
+          </button>
+          <button className="btn btn-outline-danger d-flex align-items-center" onClick={handleLogout}>
+            <LogOut size={18} className="me-2" /> Logout
+          </button>
+        </div>
       </div>
 
       <div className="row mb-4 text-center g-4">
@@ -201,6 +243,36 @@ const CustomerCareDashboard = () => {
           </div>
         </div>
       </div>
+
+      {showFileModal && (
+        <div className="modal-backdrop d-flex justify-content-center align-items-center" style={{position:'fixed',inset:0,zIndex:1050}}>
+          <div className="card p-4" style={{width:640,maxWidth:'96%'}}>
+            <div className="d-flex justify-content-between mb-3">
+              <h5 className="mb-0">File complaint on behalf of citizen</h5>
+              <button className="btn btn-sm btn-outline-secondary" onClick={closeFileModal}>Close</button>
+            </div>
+            <div className="mb-3">
+              <label className="form-label">Complaint text</label>
+              <textarea className="form-control" rows={4} value={formText} onChange={e => setFormText(e.target.value)} />
+            </div>
+            <div className="row g-2 mb-3">
+              <div className="col-md-6">
+                <label className="form-label">Category (optional)</label>
+                <input className="form-control" value={formCategory} onChange={e => setFormCategory(e.target.value)} placeholder="e.g., Streetlights" />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label">Ward number (optional)</label>
+                <input className="form-control" value={formWard} onChange={e => setFormWard(e.target.value)} placeholder="e.g., 12" />
+              </div>
+            </div>
+            <div className="d-flex justify-content-end">
+              <button className="btn btn-secondary me-2" onClick={closeFileModal} disabled={submitting}>Cancel</button>
+              <button className="btn btn-primary" onClick={submitOnBehalf} disabled={submitting}>{submitting ? 'Submitting...' : 'Submit'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
