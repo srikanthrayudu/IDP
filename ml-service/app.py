@@ -6,7 +6,10 @@ import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from shap_utils import build_text_explainer, load_shap_background, summarize_shap_values
+from shap_utils import build_text_explainer, build_callable_text_explainer, load_shap_background, summarize_shap_values
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 app = Flask(__name__)
 CORS(app)
@@ -126,6 +129,8 @@ bert_priority_model = None
 bert_embedder = None
 _shap_explainer = None
 _shap_output_names = None
+_bert_shap_explainer = None
+_bert_shap_output_names = None
 if BERT_ENABLED and bert_model_path:
     try:
         from sentence_transformers import SentenceTransformer
@@ -211,6 +216,23 @@ def get_shap_explainer(output_names):
     _shap_output_names = list(output_names)
     return _shap_explainer
 
+
+def get_bert_shap_explainer(output_names):
+    global _bert_shap_explainer, _bert_shap_output_names
+    if _bert_shap_explainer is not None and _bert_shap_output_names == output_names:
+        return _bert_shap_explainer
+
+    if bert_model is None or bert_embedder is None:
+        return None
+
+    def predict_fn(texts):
+        embeddings = bert_embedder.encode(list(texts), normalize_embeddings=True)
+        return bert_model.predict_proba(embeddings)
+
+    _bert_shap_explainer = build_callable_text_explainer(predict_fn, output_names)
+    _bert_shap_output_names = list(output_names)
+    return _bert_shap_explainer
+
 @app.route("/predict", methods=["POST"])
 def predict():
     if not request.is_json:
@@ -255,9 +277,11 @@ def predict():
         shap_base_value = None
         shap_top_class = None
 
-        if SHAP_ENABLED and model_used == "tfidf":
+        if SHAP_ENABLED:
             try:
-                explainer = get_shap_explainer(classes)
+                explainer = get_shap_explainer(classes) if model_used == "tfidf" else get_bert_shap_explainer(classes)
+                if explainer is None and model_used != "tfidf":
+                    explainer = get_shap_explainer(classes)
                 shap_result = explainer([text])
                 class_index = classes.index(top_category)
                 shap_values, shap_base_value = summarize_shap_values(

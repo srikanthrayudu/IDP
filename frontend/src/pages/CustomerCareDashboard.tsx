@@ -20,6 +20,8 @@ interface Complaint {
   wardNumber?: string;
   createdAt?: string;
   shapInterpretations?: string;
+  onBehalfOf?: string;
+  source?: string;
 }
 
 const CustomerCareDashboard = () => {
@@ -35,12 +37,14 @@ const CustomerCareDashboard = () => {
   const [formText, setFormText] = useState('');
   const [formCategory, setFormCategory] = useState('');
   const [formWard, setFormWard] = useState('');
+  const [formOnBehalf, setFormOnBehalf] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const openFileModal = () => {
     setFormText('');
     setFormCategory('');
     setFormWard('');
+    setFormOnBehalf('');
     setShowFileModal(true);
   };
   const closeFileModal = () => setShowFileModal(false);
@@ -55,6 +59,8 @@ const CustomerCareDashboard = () => {
       const payload: any = { text: formText.trim() };
       if (formCategory) payload.category = formCategory.trim();
       if (formWard) payload.wardNumber = formWard.trim();
+      if (formOnBehalf) payload.onBehalfOf = formOnBehalf.trim();
+      payload.source = 'CUSTOMER_CARE';
       await api.post('/complaints', payload);
       setShowFileModal(false);
       fetchData();
@@ -180,6 +186,8 @@ const CustomerCareDashboard = () => {
                   <th>Category</th>
                   <th>ML Prediction</th>
                   <th>Department</th>
+                  <th>Source</th>
+                  <th>On Behalf Of</th>
                   <th>Ward</th>
                   <th>BBMP Zone</th>
                   <th>Status</th>
@@ -191,7 +199,7 @@ const CustomerCareDashboard = () => {
               </thead>
               <tbody>
                 {complaints.length === 0 ? (
-                  <tr><td colSpan={11} className="text-center py-4 text-muted">No complaints found.</td></tr>
+                  <tr><td colSpan={13} className="text-center py-4 text-muted">No complaints found.</td></tr>
                 ) : complaints.map(c => {
                   const rankedJson = c.rankedCategories || (c as any).ranked_categories || c.ranked_categories;
                   let mlTop = null; let mlScore = null;
@@ -216,6 +224,8 @@ const CustomerCareDashboard = () => {
                       </div>
                     </td>
                     <td><span className="badge bg-light text-dark border">{c.department || 'Unassigned'}</span></td>
+                    <td><span className="badge bg-light text-dark border">{c.source || '—'}</span></td>
+                    <td><div className="text-secondary small">{c.onBehalfOf || '—'}</div></td>
                     <td><span className="badge bg-light text-dark border">{c.wardNumber || 'N/A'}</span></td>
                     <td><div className="text-secondary small">{c.bbmpZone || 'N/A'}</div></td>
                     <td>
@@ -265,6 +275,10 @@ const CustomerCareDashboard = () => {
                 <input className="form-control" value={formWard} onChange={e => setFormWard(e.target.value)} placeholder="e.g., 12" />
               </div>
             </div>
+            <div className="mb-3">
+              <label className="form-label">On behalf of (optional)</label>
+              <input className="form-control" value={formOnBehalf} onChange={e => setFormOnBehalf(e.target.value)} placeholder="Citizen name, caller, or reference" />
+            </div>
             <div className="d-flex justify-content-end">
               <button className="btn btn-secondary me-2" onClick={closeFileModal} disabled={submitting}>Cancel</button>
               <button className="btn btn-primary" onClick={submitOnBehalf} disabled={submitting}>{submitting ? 'Submitting...' : 'Submit'}</button>
@@ -278,4 +292,3 @@ const CustomerCareDashboard = () => {
 };
 
 export default CustomerCareDashboard;
-

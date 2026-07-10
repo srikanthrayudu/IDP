@@ -24,6 +24,11 @@ def build_text_explainer(model, background_texts: typing.List[str], output_names
     return shap.Explainer(model.predict_proba, masker, output_names=output_names)
 
 
+def build_callable_text_explainer(predict_fn, output_names: typing.Optional[typing.List[str]] = None):
+    masker = shap.maskers.Text(r"\W")
+    return shap.Explainer(predict_fn, masker, output_names=output_names)
+
+
 def summarize_shap_values(shap_values, class_index: int, max_words: int) -> typing.Tuple[dict, float]:
     values = shap_values.values[0]
     tokens = shap_values.data[0]
@@ -51,4 +56,3 @@ def summarize_shap_values(shap_values, class_index: int, max_words: int) -> typi
         base_value = float(base_values[0])
 
     return shap_dict, base_value
-

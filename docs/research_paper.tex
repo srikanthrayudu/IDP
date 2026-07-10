@@ -238,6 +238,13 @@ The SHAP integration successfully extracts and visualizes key predictive phrases
 \label{fig:shap_explainer}
 \end{figure}
 
+\subsection{Verification and Validation}
+The project was verified at both the software and model levels. Backend correctness is covered by Spring Boot integration tests that validate role-scoped complaint visibility, ensuring that administrative users can see all complaints while ward members remain restricted to their own ward. The ML service is validated through smoke tests that exercise training, prediction, and SHAP explanation generation, while runtime health checks expose `/health`, `/metrics`, and `/predict` endpoints for manual and automated inspection.
+
+Validation of the classifier is based on a hold-out evaluation split rather than the training set itself. As reported in the implementation artifacts, the category model achieves 99.79\% accuracy with a 99.11\% macro F1-score, and the priority model achieves 99.87\% accuracy. Per-class precision, recall, F1, and confusion matrices are generated during training to confirm that performance remains stable across the full label set and not only on the dominant classes. This combination of unit-level verification, service-level health checks, and held-out evaluation provides clear evidence that the system is both functionally correct and empirically validated.
+
+In addition, a one-vs-rest ROC analysis is serialized for the category classifier so that macro and micro AUC values can be inspected directly in the dashboard. This makes the validation story stronger than accuracy alone, because it also captures the trade-off between true-positive rate and false-positive rate across the full probability space.
+
 %%=======================================================================
 \section{Conclusion and Future Work}
 %%=======================================================================
