@@ -8,6 +8,9 @@ interface Complaint {
   id: number;
   text: string;
   category?: string;
+  // raw ML ranked categories JSON (camelCase or snake_case depending on API)
+  rankedCategories?: string;
+  ranked_categories?: string;
   department?: string;
   priority?: string;
   status: string;
@@ -133,6 +136,7 @@ const CustomerCareDashboard = () => {
                 <tr>
                   <th className="ps-4">ID</th>
                   <th>Category</th>
+                  <th>ML Prediction</th>
                   <th>Department</th>
                   <th>Ward</th>
                   <th>BBMP Zone</th>
@@ -145,11 +149,30 @@ const CustomerCareDashboard = () => {
               </thead>
               <tbody>
                 {complaints.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-4 text-muted">No complaints found.</td></tr>
-                ) : complaints.map(c => (
+                  <tr><td colSpan={11} className="text-center py-4 text-muted">No complaints found.</td></tr>
+                ) : complaints.map(c => {
+                  const rankedJson = c.rankedCategories || (c as any).ranked_categories || c.ranked_categories;
+                  let mlTop = null; let mlScore = null;
+                  try {
+                    const arr = rankedJson ? JSON.parse(rankedJson) : null;
+                    if (Array.isArray(arr) && arr.length > 0) {
+                      mlTop = arr[0].category;
+                      mlScore = arr[0].score;
+                    }
+                  } catch (e) {
+                    // silent parse error
+                  }
+                  return (
                   <tr key={c.id}>
                     <td className="ps-4 fw-medium">#{c.id}</td>
                     <td><span className="badge bg-light text-primary border border-primary-subtle">{c.category || 'N/A'}</span></td>
+                    <td>
+                      <div style={{minWidth:120}}>
+                        {mlTop ? (
+                          <div className="small text-secondary">{mlTop} <span className="text-muted">{mlScore ? `(${(mlScore*100).toFixed(0)}%)` : ''}</span></div>
+                        ) : <div className="small text-muted">No ML data</div>}
+                      </div>
+                    </td>
                     <td><span className="badge bg-light text-dark border">{c.department || 'Unassigned'}</span></td>
                     <td><span className="badge bg-light text-dark border">{c.wardNumber || 'N/A'}</span></td>
                     <td><div className="text-secondary small">{c.bbmpZone || 'N/A'}</div></td>
@@ -171,7 +194,8 @@ const CustomerCareDashboard = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
