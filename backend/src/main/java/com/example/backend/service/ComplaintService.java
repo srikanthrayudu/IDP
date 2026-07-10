@@ -676,7 +676,12 @@ public class ComplaintService {
             if (department == null) {
                 return List.of();
             }
-            return repository.findByDepartment(department);
+            List<Complaint> complaints = repository.findByDepartment(department);
+            // hydrate any root complaints so department officers can see the full workflow
+            complaints.stream()
+                    .filter(complaint -> "ROOT".equalsIgnoreCase(complaint.getWorkflowRole()))
+                    .forEach(this::hydrateWorkflowTasks);
+            return complaints;
         }
         return List.of();
     }
